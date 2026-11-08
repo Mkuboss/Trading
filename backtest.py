@@ -7,6 +7,7 @@ Strategi yang diuji:
   donchian      - Breakout channel 20 bar, trailing exit channel 10 bar
   session_break - Breakout range sesi Asia saat London/NY (butuh data intraday)
   mean_revert   - Bollinger Band + RSI, exit di garis tengah
+  squeeze_runner  - Aturan SL $3 tetap + tanpa TP + SL plus/trailing: BB squeeze breakout M15
   sell_rally_scalp - Win rate tinggi (~90%): MACD sell-the-rally M5, ADX>20, sesi London-NY
   trend_breakout- STRATEGI FINAL hasil riset: Donchian 20 + filter EMA50 harian + trailing 3 ATR (long)
 
@@ -139,6 +140,9 @@ def atr(df: pd.DataFrame, n: int = 14) -> pd.Series:
 #   exit_long  : True -> tutup posisi buy di open bar berikutnya
 #   exit_short : True -> tutup posisi sell di open bar berikutnya
 #   trail      : (opsional) jarak trailing stop dalam $, NaN = tanpa trailing
+#   trail_start: (opsional) trailing baru aktif setelah profit >= nilai ini ($)
+#   be_trigger : (opsional) setelah profit >= nilai ini ($), SL dipindah ke entry + be_plus
+#   be_plus    : (opsional) jarak SL di atas entry setelah breakeven ($)
 # ---------------------------------------------------------------------------
 def _plan(df, long, short, sl, tp, exit_long, exit_short) -> pd.DataFrame:
     entry = long.fillna(False).astype(int) - short.fillna(False).astype(int)
@@ -237,7 +241,27 @@ def strat_sell_rally_scalp(df, adx_min=20, sl_atr=3.5, tp_rr=0.25, start_hour=7,
     return _plan(df, no, short, sl_atr * a, tp_rr * sl_atr * a, no, no)
 
 
+def strat_squeeze_runner(df, bb_n=20, bb_k=2.0, sq_lookback=120, sq_pct=0.2,
+                         sl_usd=3.0, be_trigger=3.0, be_plus=1.0, trail_usd=15.0):
+    """ATURAN: SL tetap 30 pips ($3), TANPA TP, SL bergerak. Hasil riset 2 bulan di M15 (lihat RESEARCH.md).
+    Entry : Bollinger Band (20, 2) sedang menyempit (lebar band di 20% terendah dari 120 bar terakhir),
+            lalu close menembus band atas (BUY) atau band bawah (SELL).
+    SL    : $3 tetap. Setelah profit $3, SL dipindah ke entry + $1 (SL plus). Trailing $15 dari close.
+    Catatan: win rate ~25%; profit bergantung pada beberapa trade besar per bulan."""
+    c = df["close"]
+    mid, sd = c.rolling(bb_n).mean(), c.rolling(bb_n).std()
+    upper, lower = mid + bb_k * sd, mid - bb_k * sd
+    width = 2 * bb_k * sd / mid
+    squeeze = (width <= width.rolling(sq_lookback).quantile(sq_pct)).shift(1).fillna(False).astype(bool)
+    long, short = squeeze & (c > upper), squeeze & (c < lower)
+    no = pd.Series(False, index=df.index)
+    plan = _plan(df, long, short, pd.Series(sl_usd, index=df.index), np.nan, no, no)
+    plan["be_trigger"], plan["be_plus"], plan["trail"] = be_trigger, be_plus, trail_usd
+    return plan
+
+
 STRATEGIES = {
+    "squeeze_runner": strat_squeeze_runner,
     "sell_rally_scalp": strat_sell_rally_scalp,
     "trend_breakout": strat_trend_breakout,
     "ema_trend": strat_ema_trend,
@@ -284,6 +308,10 @@ def run_backtest(df: pd.DataFrame, plan: pd.DataFrame, cfg: Config, start: int =
     sl_d, tp_d = plan["sl"].to_numpy(), plan["tp"].to_numpy()
     ex_long, ex_short = plan["exit_long"].to_numpy(), plan["exit_short"].to_numpy()
     trail = plan["trail"].to_numpy() if "trail" in plan.columns else None
+    # Opsional: breakeven-plus dan trailing yang baru aktif setelah profit tertentu (semua dalam $)
+    be_trig = plan["be_trigger"].to_numpy() if "be_trigger" in plan.columns else None
+    be_plus = plan["be_plus"].to_numpy() if "be_plus" in plan.columns else None
+    trail_start = plan["trail_start"].to_numpy() if "trail_start" in plan.columns else None
     times = df.index
     half = cfg.spread / 2
 
@@ -334,9 +362,17 @@ def run_backtest(df: pd.DataFrame, plan: pd.DataFrame, cfg: Config, start: int =
                 close(i, o[i] if gap else pos.tp_price, "TP")
 
         # 2b) Trailing stop (chandelier): geser SL mengikuti close, berlaku mulai bar berikutnya
-        if pos is not None and trail is not None and not np.isnan(trail[i]):
-            new_sl = c[i] - pos.direction * trail[i]
-            pos.sl_price = max(pos.sl_price, new_sl) if pos.direction == 1 else min(pos.sl_price, new_sl)
+        if pos is not None:
+            d = pos.direction
+            profit = d * (c[i] - pos.entry_price)
+            cands = []
+            if be_trig is not None and not np.isnan(be_trig[i]) and profit >= be_trig[i]:
+                cands.append(pos.entry_price + d * (0.0 if be_plus is None or np.isnan(be_plus[i]) else be_plus[i]))
+            if trail is not None and not np.isnan(trail[i]) and \
+                    (trail_start is None or np.isnan(trail_start[i]) or profit >= trail_start[i]):
+                cands.append(c[i] - d * trail[i])
+            for new_sl in cands:
+                pos.sl_price = max(pos.sl_price, new_sl) if d == 1 else min(pos.sl_price, new_sl)
 
         # 3) Sinyal di close bar ini -> dieksekusi di open bar berikutnya
         if pos is not None:

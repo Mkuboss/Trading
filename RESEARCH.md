@@ -125,3 +125,54 @@ Kandidat lain yang lolos:
 - Hanya 2 bulan data, dan keduanya dalam fase emas turun dan bergejolak.
 - Saat emas berbalik naik kuat, sell saat harga memantul akan kena SL besar berulang kali. Hentikan strategi jika harian close di atas EMA50 harian.
 - Uji di akun demo dulu.
+
+---
+
+# Riset aturan: SL tetap 30 pips, tanpa TP, SL bergerak (SL plus + trailing)
+
+Data: Yahoo `GC=F` M5/M15, 8 Sep – 6 Nov 2026 (dua bulan terpisah). Spread $0,40.
+Script: `sl30_scan.py` (`SL_USD=3 python sl30_scan.py`, juga diuji `SL_USD=10` dan `30`).
+
+Definisi pip: 1 pip = $0,10, jadi 30 pips = **$3**. Untuk pembanding diuji juga $10 dan $30 (kalau broker memakai 1 pip = $1).
+
+Grid: 9 trigger × filter tren/ADX/sesi/arah × breakeven (tanpa, 1×SL, 2×SL) × SL plus (⅓ SL) × trailing (1, 2, 3, 5, 8 × SL) × awal trailing (0, 2, 4 × SL) = **25.110 kombinasi per ukuran SL, 75.330 total**.
+
+## Hasil
+
+| SL | Lolos (profit dua bulan, ≥20 trade/bulan) | Terbaik | Tetap profit tanpa 3 trade terbaik |
+|---|---|---|---|
+| $3 | 801 | BB squeeze M15: +47% / +40% | **0 kombinasi** |
+| $10 | 948 | RSI-MR sell M5: +25% / +20% | **0 kombinasi** |
+| $30 | 76 | MACD sell M5: +8% / +5% | **0 kombinasi** |
+
+Kesimpulan struktural: dengan SL kecil (ATR M15 saat ini ≈ $8, jadi SL $3 kurang dari setengah ATR) dan TP tanpa batas, **sekitar 73% trade kena SL penuh** dan profit datang dari sedikit trade besar. Tidak ada kombinasi yang profitnya merata. Ini bukan kegagalan pencarian, tapi konsekuensi matematis dari aturannya.
+
+## Strategi terbaik untuk aturan ini: `squeeze_runner` (M15)
+
+```
+Entry  : Bollinger Band (20, 2) sedang menyempit (lebar band di 20% terendah dari 120 bar),
+         lalu close menembus band atas = BUY, band bawah = SELL
+SL     : $3 tetap (30 pips)
+SL plus: setelah profit +$3, SL dipindah ke entry +$1
+Trailing: $15 dari close (dihitung di penutupan candle M15)
+TP     : tidak ada
+```
+
+| Risiko | Periode | Trade | Win rate | PF | Return | Max DD | Kalah beruntun |
+|---|---|---|---|---|---|---|---|
+| 1% | 8 Sep – 6 Okt | 50 | 28% | 2,15 | **+46,9%** | −20,7% | 7 |
+| 1% | 7 Okt – 6 Nov | 47 | 26% | 2,03 | **+40,3%** | −13,9% | 9 |
+| 0,5% | 8 Sep – 6 Okt | 50 | 28% | 2,21 | +24,0% | −10,9% | 7 |
+| 0,5% | 7 Okt – 6 Nov | 47 | 26% | 2,02 | +19,5% | −7,3% | 9 |
+
+Anatomi 97 trade dalam 2 bulan: **71 kena SL penuh (−1R)**, 12 keluar di breakeven/plus, 14 profit ≥ 1R, 8 di antaranya ≥ 5R. Trade terbesar +37R (sell dari $4.303 ke $4.192, 12 jam). Median trade = −1,07R.
+
+Yang stabil di grid: breakeven 1–2×SL dan trailing 3–5×SL semuanya positif di dua bulan. Filter tambahan (EMA200, ADX, sesi, satu arah saja) justru memperburuk salah satu bulan, jadi tidak dipakai.
+
+## Risiko
+
+- 1% risiko = $3 SL → ukuran posisi besar (0,33 lot per $10.000). Slippage $0,50 saat berita sudah 17% dari SL. Spread $0,80 menurunkan return sekitar 8 poin.
+- Rangkaian kalah 7–9 kali berturut-turut adalah normal. Secara psikologis berat: 3 dari 4 trade rugi.
+- Dua bulan data, keduanya di fase emas sangat volatil. Di pasar tenang, breakout squeeze lebih sering gagal.
+- Trailing dihitung di close candle, bukan tick. Di MT5 implementasi tick-by-tick akan sedikit berbeda.
+- Pakai risiko 0,5% kalau drawdown −20% terasa terlalu dalam.

@@ -118,3 +118,38 @@ def test_sell_rally_scalp_is_short_only_with_small_tp():
     plan = bt.strat_sell_rally_scalp(df)
     assert (plan["entry"] <= 0).all() and (plan["entry"] == -1).any()
     assert (plan["tp"].dropna() < plan["sl"].dropna()).all()
+
+
+def test_breakeven_plus_moves_stop_above_entry():
+    df = make_df([
+        [2000, 2001, 1999, 2000],
+        [2000, 2004, 1999, 2004],  # masuk 2000, profit 4 >= trigger 3 -> SL ke 2001
+        [2004, 2006, 2000, 2003],  # low 2000 kena SL 2001
+    ])
+    plan = make_plan(df, 0, 1, sl=3)
+    plan["be_trigger"], plan["be_plus"] = 3.0, 1.0
+    trades, _ = bt.run_backtest(df, plan, CFG)
+    assert trades[0].reason == "SL" and trades[0].exit_price == 2001
+    assert trades[0].pnl > 0
+
+
+def test_trail_start_delays_trailing():
+    df = make_df([
+        [2000, 2001, 1999, 2000],
+        [2000, 2002, 1999, 2002],  # profit 2 < trail_start 5 -> SL tetap 1997
+        [2002, 2003, 1998, 1999],  # low 1998 tidak kena SL 1997
+        [1999, 2010, 1999, 2010],  # profit 10 -> trailing aktif, SL = 2010-3 = 2007
+        [2010, 2011, 2005, 2006],  # kena 2007
+    ])
+    plan = make_plan(df, 0, 1, sl=3)
+    plan["trail"], plan["trail_start"] = 3.0, 5.0
+    trades, _ = bt.run_backtest(df, plan, CFG)
+    assert trades[0].exit_price == 2007
+
+
+def test_squeeze_runner_fixed_sl_no_tp():
+    df = bt.make_demo(n_days=60)
+    plan = bt.strat_squeeze_runner(df)
+    assert (plan["sl"] == 3.0).all() and plan["tp"].isna().all()
+    assert (plan["be_trigger"] == 3.0).all() and (plan["trail"] == 15.0).all()
+    assert (plan["entry"] != 0).any()
