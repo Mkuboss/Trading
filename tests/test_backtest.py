@@ -104,3 +104,10 @@ def test_trailing_stop_locks_profit():
     trades, _ = bt.run_backtest(df, plan, CFG)
     assert trades[0].reason == "SL" and trades[0].exit_price == 2025
     assert trades[0].r_multiple == pytest.approx(2.5)
+
+
+def test_final_strategy_is_long_only_with_trailing():
+    df = bt.make_demo(n_days=200)
+    plan = bt.strat_trend_breakout(df)
+    assert (plan["entry"] >= 0).all() and (plan["entry"] == 1).any()
+    assert plan["trail"].notna().any()

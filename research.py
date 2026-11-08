@@ -268,8 +268,11 @@ def main():
     ap.add_argument("--tfs", default="1h,4h,1d")
     ap.add_argument("--spread", type=float, default=0.40)
     ap.add_argument("--top", type=int, default=15)
+    ap.add_argument("--min-trades", type=int, default=120, help="minimal trade di IS agar lolos seleksi")
     ap.add_argument("--out", default="results/research")
     a = ap.parse_args()
+    global MIN_TRADES
+    MIN_TRADES = a.min_trades
 
     raw = bt.load_csv(a.csv)
     cfg = bt.Config(capital=10_000, risk_pct=1.0, spread=a.spread)

@@ -13,7 +13,6 @@ Semua waktu dalam UTC.
 from __future__ import annotations
 
 import argparse
-import concurrent.futures as cf
 import lzma
 import struct
 import time
@@ -51,19 +50,26 @@ def fetch_month(sym: str, year: int, month0: int, side: str = "BID", retries: in
     return df[df["volume"] > 0]  # buang bar kosong (akhir pekan/libur)
 
 
-def fetch_range(sym: str, start_year: int, end_year: int, workers: int = 2) -> pd.DataFrame:
+def fetch_range(sym: str, start_year: int, end_year: int, cache_dir: Path, delay: float = 1.5) -> pd.DataFrame:
+    """Unduh per bulan secara berurutan. Setiap bulan disimpan di cache_dir, jadi bisa dilanjutkan."""
     now = pd.Timestamp.utcnow().tz_localize(None)
     jobs = [(y, m) for y in range(start_year, end_year + 1) for m in range(12)
             if pd.Timestamp(year=y, month=m + 1, day=1) < now.replace(day=1)]
+    cache_dir.mkdir(parents=True, exist_ok=True)
     frames = []
-    with cf.ThreadPoolExecutor(workers) as ex:
-        futs = {ex.submit(fetch_month, sym, y, m): (y, m) for y, m in jobs}
-        for f in cf.as_completed(futs):
-            y, m = futs[f]
+    for y, m in jobs:
+        f = cache_dir / f"{sym}_{y}-{m + 1:02d}.csv"
+        if not f.exists():
             try:
-                frames.append(f.result())
+                fetch_month(sym, y, m).to_csv(f)
+                print(f"  {y}-{m + 1:02d} ok", flush=True)
             except Exception as e:  # noqa: BLE001
-                print(f"  gagal {y}-{m + 1:02d}: {e}")
+                print(f"  {y}-{m + 1:02d} gagal: {e}", flush=True)
+                continue
+            time.sleep(delay)
+        part = pd.read_csv(f, index_col=0, parse_dates=True)
+        if len(part):
+            frames.append(part)
     df = pd.concat(frames).sort_index()
     return df[~df.index.duplicated()]
 
@@ -75,7 +81,7 @@ def main() -> None:
     p.add_argument("--end", type=int, default=pd.Timestamp.utcnow().year)
     p.add_argument("--out", default="data/XAUUSD_H1.csv")
     a = p.parse_args()
-    df = fetch_range(a.symbol, a.start, a.end)
+    df = fetch_range(a.symbol, a.start, a.end, Path(a.out).parent / "cache")
     Path(a.out).parent.mkdir(parents=True, exist_ok=True)
     df.index.name = "datetime"
     df.to_csv(a.out, float_format="%.3f")

@@ -7,6 +7,7 @@ Strategi yang diuji:
   donchian      - Breakout channel 20 bar, trailing exit channel 10 bar
   session_break - Breakout range sesi Asia saat London/NY (butuh data intraday)
   mean_revert   - Bollinger Band + RSI, exit di garis tengah
+  trend_breakout- STRATEGI FINAL hasil riset: Donchian 20 + filter EMA50 harian + trailing 3 ATR (long)
 
 Sumber data:
   --source yf    Yahoo Finance (default ticker GC=F, gold futures)
@@ -201,7 +202,25 @@ def strat_mean_revert(df, bb_n=20, bb_k=2.0, rsi_n=14, rsi_lo=30, rsi_hi=70, sl_
     return _plan(df, long, short, sl_atr * a, np.nan, c >= mid, c <= mid)
 
 
+def strat_trend_breakout(df, entry_n=20, bias_ema=50, sl_atr=1.5, trail_atr=3.0):
+    """STRATEGI FINAL hasil riset (lihat RESEARCH.md).
+    Buy saat close menembus high 20 bar, HANYA jika close harian kemarin > EMA50 harian.
+    SL awal 1.5 ATR, lalu trailing stop 3 ATR dari close. Tanpa TP tetap: biarkan profit berjalan.
+    Tidak ada sisi short: di riset 26 tahun, short pada emas konsisten rugi."""
+    c, h = df["close"], df["high"]
+    a = atr(df)
+    d = c.resample("1D").last().dropna()
+    bias = np.sign(d - ema(d, bias_ema)).shift(1)
+    up_day = pd.Series(df.index.normalize().map(bias), index=df.index) > 0
+    long = (c > h.rolling(entry_n).max().shift(1)) & up_day
+    no = pd.Series(False, index=df.index)
+    plan = _plan(df, long, no, sl_atr * a, np.nan, no, no)
+    plan["trail"] = trail_atr * a
+    return plan
+
+
 STRATEGIES = {
+    "trend_breakout": strat_trend_breakout,
     "ema_trend": strat_ema_trend,
     "donchian": strat_donchian,
     "session_break": strat_session_breakout,
