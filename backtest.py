@@ -1,0 +1,446 @@
+#!/usr/bin/env python3
+"""
+Backtest beberapa metode trading XAUUSD dan bandingkan hasilnya.
+
+Strategi yang diuji:
+  ema_trend     - Trend following: EMA50/EMA200 + entry saat pullback (RSI)
+  donchian      - Breakout channel 20 bar, trailing exit channel 10 bar
+  session_break - Breakout range sesi Asia saat London/NY (butuh data intraday)
+  mean_revert   - Bollinger Band + RSI, exit di garis tengah
+
+Sumber data:
+  --source yf    Yahoo Finance (default ticker GC=F, gold futures)
+  --source csv   File CSV, termasuk export dari MetaTrader 5
+  --source demo  Data sintetis, HANYA untuk mengetes script (hasilnya tidak bermakna)
+
+Contoh:
+  python backtest.py --source yf --interval 1h --period 730d
+  python backtest.py --source csv --csv XAUUSD_H1.csv --tz-offset 2
+  python backtest.py --source demo
+"""
+from __future__ import annotations
+
+import argparse
+import math
+import sys
+from dataclasses import dataclass, asdict
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+OZ_PER_LOT = 100  # 1 lot XAUUSD = 100 troy ounce
+
+
+# ---------------------------------------------------------------------------
+# Data
+# ---------------------------------------------------------------------------
+def _finalize(df: pd.DataFrame) -> pd.DataFrame:
+    df = df[["open", "high", "low", "close"]].astype(float)
+    df = df[~df.index.duplicated(keep="last")].sort_index()
+    return df.dropna()
+
+
+def load_csv(path: str, tz_offset: float = 0.0) -> pd.DataFrame:
+    """Baca CSV OHLC. Mendukung format MT5 (<DATE> <TIME> <OPEN> ...) dan format umum.
+
+    tz_offset: selisih jam zona waktu data terhadap UTC (mis. server broker GMT+2 -> 2).
+    Semua waktu dikonversi ke UTC, karena jam sesi di strategi memakai UTC.
+    """
+    df = pd.read_csv(path, sep=None, engine="python")
+    df.columns = [str(c).strip().strip("<>").strip().lower() for c in df.columns]
+
+    if "date" in df.columns and "time" in df.columns:
+        stamp = df["date"].astype(str).str.replace(".", "-", regex=False) + " " + df["time"].astype(str)
+    else:
+        for cand in ("datetime", "date", "time", "timestamp", "gmt time", "local time"):
+            if cand in df.columns:
+                stamp = df[cand].astype(str).str.replace(".", "-", regex=False)
+                break
+        else:
+            raise ValueError(f"Kolom waktu tidak ditemukan. Kolom yang ada: {list(df.columns)}")
+
+    idx = pd.to_datetime(stamp, utc=False)
+    if getattr(idx.dt, "tz", None) is not None:
+        idx = idx.dt.tz_convert("UTC").dt.tz_localize(None)
+    else:
+        idx = idx - pd.Timedelta(hours=tz_offset)
+    df.index = pd.DatetimeIndex(idx)
+    return _finalize(df)
+
+
+def load_yf(ticker: str, interval: str, period: str) -> pd.DataFrame:
+    try:
+        import yfinance as yf
+    except ImportError:
+        sys.exit("yfinance belum terpasang. Jalankan: pip install yfinance")
+    df = yf.download(ticker, interval=interval, period=period, progress=False, auto_adjust=False)
+    if df.empty:
+        sys.exit(f"Gagal mengambil data {ticker} dari Yahoo Finance (cek koneksi/ticker/period).")
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    df.columns = [c.lower() for c in df.columns]
+    if df.index.tz is not None:
+        df.index = df.index.tz_convert("UTC").tz_localize(None)
+    return _finalize(df)
+
+
+def make_demo(n_days: int = 900, seed: int = 7) -> pd.DataFrame:
+    """Data H1 sintetis: rezim tren/sideways bergantian, volatilitas lebih tinggi di sesi London/NY."""
+    rng = np.random.default_rng(seed)
+    idx = pd.date_range("2023-01-02", periods=n_days * 24, freq="h")
+    idx = idx[idx.dayofweek < 5]
+    n = len(idx)
+    hours = idx.hour.to_numpy()
+    vol = np.where((hours >= 7) & (hours < 17), 0.0024, 0.0011)
+    drift = np.zeros(n)
+    i = 0
+    while i < n:
+        length = rng.integers(200, 900)
+        drift[i:i + length] = rng.choice([-0.00012, 0.0, 0.0, 0.00012])
+        i += length
+    rets = drift + vol * rng.standard_t(5, n) / math.sqrt(5 / 3)
+    close = 1900 * np.exp(np.cumsum(rets))
+    open_ = np.r_[close[0], close[:-1]]
+    wick = np.abs(rng.normal(0, vol * 0.6, n)) * close
+    high = np.maximum(open_, close) + wick
+    low = np.minimum(open_, close) - np.abs(rng.normal(0, vol * 0.6, n)) * close
+    return pd.DataFrame({"open": open_, "high": high, "low": low, "close": close}, index=idx)
+
+
+# ---------------------------------------------------------------------------
+# Indikator
+# ---------------------------------------------------------------------------
+def ema(s: pd.Series, n: int) -> pd.Series:
+    return s.ewm(span=n, adjust=False).mean()
+
+
+def rsi(s: pd.Series, n: int = 14) -> pd.Series:
+    d = s.diff()
+    up = d.clip(lower=0).ewm(alpha=1 / n, adjust=False).mean()
+    dn = (-d.clip(upper=0)).ewm(alpha=1 / n, adjust=False).mean()
+    return 100 - 100 / (1 + up / dn.replace(0, np.nan))
+
+
+def atr(df: pd.DataFrame, n: int = 14) -> pd.Series:
+    pc = df["close"].shift(1)
+    tr = pd.concat([df["high"] - df["low"], (df["high"] - pc).abs(), (df["low"] - pc).abs()], axis=1).max(axis=1)
+    return tr.ewm(alpha=1 / n, adjust=False).mean()
+
+
+# ---------------------------------------------------------------------------
+# Strategi
+# Setiap strategi mengembalikan "plan" (DataFrame sejajar dengan data):
+#   entry      : +1 buy / -1 sell / 0 (sinyal di close bar ini, dieksekusi di open bar berikutnya)
+#   sl         : jarak stop loss (dalam $)
+#   tp         : jarak take profit (dalam $), NaN = tanpa TP tetap
+#   exit_long  : True -> tutup posisi buy di open bar berikutnya
+#   exit_short : True -> tutup posisi sell di open bar berikutnya
+# ---------------------------------------------------------------------------
+def _plan(df, long, short, sl, tp, exit_long, exit_short) -> pd.DataFrame:
+    entry = long.fillna(False).astype(int) - short.fillna(False).astype(int)
+    return pd.DataFrame({
+        "entry": entry,
+        "sl": sl,
+        "tp": tp if isinstance(tp, pd.Series) else pd.Series(tp, index=df.index, dtype=float),
+        "exit_long": exit_long.fillna(False).astype(bool),
+        "exit_short": exit_short.fillna(False).astype(bool),
+    }, index=df.index)
+
+
+def strat_ema_trend(df, fast=50, slow=200, rsi_n=14, rsi_buy=40, rsi_sell=60, sl_atr=1.5, tp_atr=3.0):
+    """Ikuti tren: buy pullback saat EMA fast > EMA slow, RSI naik kembali melewati 40 (sebaliknya untuk sell)."""
+    c = df["close"]
+    ef, es, r, a = ema(c, fast), ema(c, slow), rsi(c, rsi_n), atr(df)
+    up = (ef > es) & (c > es)
+    dn = (ef < es) & (c < es)
+    long = up & (r.shift(1) < rsi_buy) & (r >= rsi_buy)
+    short = dn & (r.shift(1) > rsi_sell) & (r <= rsi_sell)
+    return _plan(df, long, short, sl_atr * a, tp_atr * a, c < es, c > es)
+
+
+def strat_donchian(df, entry_n=20, exit_n=10, sl_atr=2.0):
+    """Breakout ala Turtle: buy tembus high 20 bar, keluar saat tembus low 10 bar (trailing)."""
+    c, h, l = df["close"], df["high"], df["low"]
+    a = atr(df)
+    long = c > h.rolling(entry_n).max().shift(1)
+    short = c < l.rolling(entry_n).min().shift(1)
+    exit_long = c < l.rolling(exit_n).min().shift(1)
+    exit_short = c > h.rolling(exit_n).max().shift(1)
+    return _plan(df, long, short, sl_atr * a, np.nan, exit_long, exit_short)
+
+
+def strat_session_breakout(df, asia_end=7, trade_end=16, close_hour=20, rr=2.0):
+    """Range sesi Asia (00:00-asia_end UTC). Entry di breakout pertama sampai trade_end UTC.
+    SL di sisi lain range (dibatasi 0.5-2 ATR), TP = rr x SL, semua posisi ditutup jam close_hour UTC."""
+    c, h, l = df["close"], df["high"], df["low"]
+    a = atr(df)
+    hour = pd.Series(df.index.hour, index=df.index)
+    day = pd.Series(df.index.normalize(), index=df.index)
+    asia = hour < asia_end
+    asia_hi = h.where(asia).groupby(day).transform("max")
+    asia_lo = l.where(asia).groupby(day).transform("min")
+    window = (hour >= asia_end) & (hour < trade_end)
+    sig = (window & (c > asia_hi)).astype(int) - (window & (c < asia_lo)).astype(int)
+    first = (sig != 0) & ((sig != 0).astype(int).groupby(day).cumsum() == 1)
+    sig = sig.where(first, 0)
+    sl = (asia_hi - asia_lo).clip(lower=0.5 * a, upper=2.0 * a)
+    eod = hour >= close_hour
+    return _plan(df, sig > 0, sig < 0, sl, rr * sl, eod, eod)
+
+
+def strat_mean_revert(df, bb_n=20, bb_k=2.0, rsi_n=14, rsi_lo=30, rsi_hi=70, sl_atr=1.5):
+    """Buy saat close di bawah lower band & RSI < 30, sell kebalikannya. Exit saat kembali ke middle band."""
+    c = df["close"]
+    mid = c.rolling(bb_n).mean()
+    sd = c.rolling(bb_n).std()
+    r, a = rsi(c, rsi_n), atr(df)
+    long = (c < mid - bb_k * sd) & (r < rsi_lo)
+    short = (c > mid + bb_k * sd) & (r > rsi_hi)
+    return _plan(df, long, short, sl_atr * a, np.nan, c >= mid, c <= mid)
+
+
+STRATEGIES = {
+    "ema_trend": strat_ema_trend,
+    "donchian": strat_donchian,
+    "session_break": strat_session_breakout,
+    "mean_revert": strat_mean_revert,
+}
+INTRADAY_ONLY = {"session_break"}
+
+
+# ---------------------------------------------------------------------------
+# Mesin backtest
+# ---------------------------------------------------------------------------
+@dataclass
+class Config:
+    capital: float = 10_000.0
+    risk_pct: float = 1.0        # % ekuitas yang dirisikokan per trade
+    spread: float = 0.30         # spread dalam $ per oz (dibayar setengah saat masuk, setengah saat keluar)
+    commission: float = 0.0      # komisi round-trip per lot ($)
+    max_leverage: float = 100.0  # batas nilai posisi / ekuitas
+
+
+@dataclass
+class Trade:
+    direction: int
+    entry_time: pd.Timestamp
+    entry_price: float
+    sl_price: float
+    tp_price: float
+    lots: float
+    risk_usd: float
+    exit_time: pd.Timestamp = None
+    exit_price: float = float("nan")
+    reason: str = ""
+    pnl: float = 0.0
+    r_multiple: float = 0.0
+
+
+def run_backtest(df: pd.DataFrame, plan: pd.DataFrame, cfg: Config, start: int = 0, end: int | None = None):
+    """Satu posisi dalam satu waktu. Kalau SL dan TP tersentuh di bar yang sama, dianggap kena SL (konservatif)."""
+    end = len(df) if end is None else end
+    o, h, l, c = (df[k].to_numpy() for k in ("open", "high", "low", "close"))
+    entry_sig = plan["entry"].to_numpy()
+    sl_d, tp_d = plan["sl"].to_numpy(), plan["tp"].to_numpy()
+    ex_long, ex_short = plan["exit_long"].to_numpy(), plan["exit_short"].to_numpy()
+    times = df.index
+    half = cfg.spread / 2
+
+    equity = cfg.capital
+    pos: Trade | None = None
+    pending_entry, pending_sl, pending_tp = 0, np.nan, np.nan
+    pending_exit = False
+    trades: list[Trade] = []
+    curve = np.empty(end - start)
+
+    def close(i, price, reason):
+        nonlocal equity, pos
+        fill = price - pos.direction * half
+        pnl = pos.direction * (fill - pos.entry_price) * pos.lots * OZ_PER_LOT - cfg.commission * pos.lots
+        pos.exit_time, pos.exit_price, pos.reason = times[i], fill, reason
+        pos.pnl, pos.r_multiple = pnl, pnl / pos.risk_usd
+        equity += pnl
+        trades.append(pos)
+        pos = None
+
+    for i in range(start, end):
+        # 1) Eksekusi perintah dari close bar sebelumnya, di harga open bar ini
+        if pos is not None and pending_exit:
+            close(i, o[i], "signal")
+        pending_exit = False
+        if pos is None and pending_entry != 0 and pending_sl > 0 and equity > 0:
+            d = pending_entry
+            fill = o[i] + d * half
+            risk_usd = equity * cfg.risk_pct / 100
+            oz = risk_usd / pending_sl
+            oz = min(oz, equity * cfg.max_leverage / fill)
+            lots = oz / OZ_PER_LOT
+            pos = Trade(d, times[i], fill, fill - d * pending_sl,
+                        fill + d * pending_tp if not np.isnan(pending_tp) else np.nan,
+                        lots, pending_sl * oz)
+        pending_entry = 0
+
+        # 2) Cek SL / TP di dalam bar
+        if pos is not None:
+            d = pos.direction
+            hit_sl = l[i] <= pos.sl_price if d == 1 else h[i] >= pos.sl_price
+            hit_tp = (not np.isnan(pos.tp_price)) and (h[i] >= pos.tp_price if d == 1 else l[i] <= pos.tp_price)
+            if hit_sl:
+                gap = (o[i] < pos.sl_price) if d == 1 else (o[i] > pos.sl_price)
+                close(i, o[i] if gap else pos.sl_price, "SL")
+            elif hit_tp:
+                gap = (o[i] > pos.tp_price) if d == 1 else (o[i] < pos.tp_price)
+                close(i, o[i] if gap else pos.tp_price, "TP")
+
+        # 3) Sinyal di close bar ini -> dieksekusi di open bar berikutnya
+        if pos is not None:
+            pending_exit = bool(ex_long[i]) if pos.direction == 1 else bool(ex_short[i])
+        elif entry_sig[i] != 0 and i + 1 < end:
+            pending_entry, pending_sl, pending_tp = int(entry_sig[i]), sl_d[i], tp_d[i]
+
+        open_pnl = 0.0 if pos is None else pos.direction * (c[i] - pos.entry_price) * pos.lots * OZ_PER_LOT
+        curve[i - start] = equity + open_pnl
+
+    if pos is not None:  # tutup posisi yang masih terbuka di akhir data
+        close(end - 1, c[end - 1], "end")
+        curve[-1] = equity
+
+    return trades, pd.Series(curve, index=times[start:end])
+
+
+# ---------------------------------------------------------------------------
+# Statistik
+# ---------------------------------------------------------------------------
+def summarize(name: str, trades: list[Trade], curve: pd.Series, capital: float) -> dict:
+    r = np.array([t.r_multiple for t in trades])
+    pnl = np.array([t.pnl for t in trades])
+    wins, losses = pnl[pnl > 0], pnl[pnl <= 0]
+    dd = (curve / curve.cummax() - 1).min() * 100 if len(curve) else 0.0
+    streak = longest = 0
+    for p in pnl:
+        streak = streak + 1 if p <= 0 else 0
+        longest = max(longest, streak)
+    net = (curve.iloc[-1] / capital - 1) * 100 if len(curve) else 0.0
+    return {
+        "strategy": name,
+        "trades": len(trades),
+        "win_rate_%": 100 * len(wins) / len(pnl) if len(pnl) else np.nan,
+        "avg_win_R": r[r > 0].mean() if (r > 0).any() else np.nan,
+        "avg_loss_R": r[r <= 0].mean() if (r <= 0).any() else np.nan,
+        "expectancy_R": r.mean() if len(r) else np.nan,
+        "profit_factor": wins.sum() / -losses.sum() if losses.sum() < 0 else np.inf,
+        "net_return_%": net,
+        "max_dd_%": dd,
+        "max_loss_streak": longest,
+    }
+
+
+def print_table(rows: list[dict], title: str) -> None:
+    print(f"\n=== {title} ===")
+    if not rows:
+        print("(tidak ada hasil)")
+        return
+    t = pd.DataFrame(rows).set_index("strategy")
+    with pd.option_context("display.width", 200, "display.max_columns", 20, "display.float_format", "{:,.2f}".format):
+        print(t.to_string())
+    few = t.index[t["trades"] < 30].tolist()
+    if few:
+        print(f"  ! Trade < 30 untuk: {', '.join(few)} -> sampel terlalu kecil, hasil belum bisa dipercaya.")
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+def main(argv=None) -> None:
+    p = argparse.ArgumentParser(description="Backtest beberapa strategi XAUUSD.",
+                                formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    p.add_argument("--source", choices=["yf", "csv", "demo"], default="yf")
+    p.add_argument("--csv", help="path file CSV (untuk --source csv)")
+    p.add_argument("--tz-offset", type=float, default=0.0, help="jam zona waktu CSV terhadap UTC (MT5 biasanya 2 atau 3)")
+    p.add_argument("--ticker", default="GC=F", help="ticker Yahoo Finance")
+    p.add_argument("--interval", default="1h", help="interval Yahoo (1h maksimal ~730d, 1d bisa bertahun-tahun)")
+    p.add_argument("--period", default="730d")
+    p.add_argument("--strategies", default=",".join(STRATEGIES), help="daftar strategi dipisah koma")
+    p.add_argument("--capital", type=float, default=10_000)
+    p.add_argument("--risk", type=float, default=1.0, help="risiko %% per trade")
+    p.add_argument("--spread", type=float, default=0.30, help="spread $ per oz")
+    p.add_argument("--commission", type=float, default=0.0, help="komisi round-trip per lot")
+    p.add_argument("--split", type=float, default=0.7,
+                   help="porsi data in-sample; sisanya out-of-sample (0 = nonaktif)")
+    p.add_argument("--out", default="results", help="folder output (trades CSV, ringkasan, grafik ekuitas)")
+    args = p.parse_args(argv)
+
+    if args.source == "csv":
+        if not args.csv:
+            p.error("--csv wajib diisi untuk --source csv")
+        df = load_csv(args.csv, args.tz_offset)
+    elif args.source == "yf":
+        df = load_yf(args.ticker, args.interval, args.period)
+    else:
+        df = make_demo()
+        print("!! MODE DEMO: data sintetis, hasil di bawah TIDAK mencerminkan pasar emas sungguhan.")
+
+    if len(df) < 300:
+        sys.exit(f"Data terlalu sedikit ({len(df)} bar). Minimal ~300 bar.")
+    step = df.index.to_series().diff().median()
+    intraday = step <= pd.Timedelta(hours=1)
+    print(f"Data: {len(df):,} bar | {df.index[0]} s/d {df.index[-1]} (UTC) | timeframe ~{step}")
+
+    cfg = Config(capital=args.capital, risk_pct=args.risk, spread=args.spread, commission=args.commission)
+    names = [s.strip() for s in args.strategies.split(",") if s.strip()]
+    unknown = set(names) - set(STRATEGIES)
+    if unknown:
+        p.error(f"Strategi tidak dikenal: {unknown}. Pilihan: {list(STRATEGIES)}")
+
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    split_i = int(len(df) * args.split) if 0 < args.split < 1 else None
+    full_rows, is_rows, oos_rows, curves = [], [], [], {}
+
+    for name in names:
+        if name in INTRADAY_ONLY and not intraday:
+            print(f"- {name}: dilewati (butuh data intraday H1 atau lebih kecil)")
+            continue
+        plan = STRATEGIES[name](df)
+        trades, curve = run_backtest(df, plan, cfg)
+        full_rows.append(summarize(name, trades, curve, cfg.capital))
+        curves[name] = curve
+        pd.DataFrame([asdict(t) for t in trades]).to_csv(out / f"trades_{name}.csv", index=False)
+        if split_i:
+            t_is, c_is = run_backtest(df, plan, cfg, 0, split_i)
+            t_oos, c_oos = run_backtest(df, plan, cfg, split_i, len(df))
+            is_rows.append(summarize(name, t_is, c_is, cfg.capital))
+            oos_rows.append(summarize(name, t_oos, c_oos, cfg.capital))
+
+    print(f"\nModal ${cfg.capital:,.0f} | risiko {cfg.risk_pct}%/trade | spread ${cfg.spread} | komisi ${cfg.commission}/lot")
+    print_table(full_rows, "SELURUH PERIODE")
+    if split_i:
+        print_table(is_rows, f"IN-SAMPLE (s/d {df.index[split_i - 1]:%Y-%m-%d})")
+        print_table(oos_rows, f"OUT-OF-SAMPLE (mulai {df.index[split_i]:%Y-%m-%d})")
+        print("  Strategi yang bagus di in-sample tapi buruk di out-of-sample kemungkinan overfit.")
+
+    pd.DataFrame(full_rows).to_csv(out / "summary.csv", index=False)
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        fig, ax = plt.subplots(figsize=(11, 5))
+        for name, curve in curves.items():
+            ax.plot(curve.index, curve.values, label=name, linewidth=1.2)
+        if split_i:
+            ax.axvline(df.index[split_i], color="grey", linestyle="--", linewidth=1, label="awal out-of-sample")
+        ax.set_title("Kurva ekuitas per strategi")
+        ax.set_ylabel("Ekuitas ($)")
+        ax.grid(alpha=0.3)
+        ax.legend()
+        fig.tight_layout()
+        fig.savefig(out / "equity.png", dpi=120)
+        print(f"\nGrafik ekuitas: {out / 'equity.png'}")
+    except ImportError:
+        print("\n(matplotlib tidak terpasang, grafik ekuitas dilewati)")
+    print(f"Detail trade & ringkasan tersimpan di folder: {out}/")
+
+
+if __name__ == "__main__":
+    main()
