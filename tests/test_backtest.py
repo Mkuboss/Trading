@@ -183,3 +183,15 @@ def test_sweep_sell_runner_is_short_only():
     df = bt.make_demo(n_days=90)
     plan = bt.strat_sweep_sell_runner(df)
     assert (plan["entry"] <= 0).all() and (plan["entry"] == -1).any()
+
+
+def test_breakeven_plus_cannot_exceed_current_price():
+    df = make_df([
+        [2000, 2001, 1999, 2000],
+        [2000, 2001, 1999, 2000.5],  # masuk 2000; profit 0.5 >= trigger 0.5, plus 1.0 -> SL dibatasi di close 2000.5
+        [2000.5, 2000.6, 1998, 1999],  # kena SL 2000.5 (bukan 2001)
+    ])
+    plan = make_plan(df, 0, 1, sl=3)
+    plan["be_trigger"], plan["be_plus"] = 0.5, 1.0
+    trades, _ = bt.run_backtest(df, plan, CFG)
+    assert trades[0].exit_price == 2000.5

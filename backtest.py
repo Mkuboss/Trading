@@ -433,7 +433,9 @@ def run_backtest(df: pd.DataFrame, plan: pd.DataFrame, cfg: Config, start: int =
             profit = d * (c[i] - pos.entry_price)
             cands = []
             if be_trig is not None and not np.isnan(be_trig[i]) and profit >= be_trig[i]:
-                cands.append(pos.entry_price + d * (0.0 if be_plus is None or np.isnan(be_plus[i]) else be_plus[i]))
+                plus = 0.0 if be_plus is None or np.isnan(be_plus[i]) else be_plus[i]
+                # SL plus tidak boleh melewati harga sekarang (stop di atas pasar = eksekusi di pasar)
+                cands.append(min(pos.entry_price + d * plus, c[i]) if d == 1 else max(pos.entry_price + d * plus, c[i]))
             if trail is not None and not np.isnan(trail[i]) and \
                     (trail_start is None or np.isnan(trail_start[i]) or profit >= trail_start[i]):
                 cands.append(c[i] - d * trail[i])
