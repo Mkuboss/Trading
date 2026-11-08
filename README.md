@@ -9,7 +9,8 @@ Script untuk menguji dan membandingkan beberapa metode trading emas (XAUUSD) di 
 | `ema_trend` | Trend following | EMA50 > EMA200 dan RSI naik lagi melewati 40 (buy), kebalikannya untuk sell | SL 1,5 ATR, TP 3 ATR, atau close menembus EMA200 |
 | `donchian` | Breakout channel (Turtle) | Close menembus high/low 20 bar | SL 2 ATR, trailing di low/high 10 bar |
 | `session_break` | Breakout sesi Asia | Breakout pertama dari range 00–07 UTC, sampai jam 16 UTC | SL di sisi lain range, TP 2R, tutup jam 20 UTC |
-| **`macd_asia_m1`** | **FINAL: SL $3 tetap, tanpa TP, SL plus + trailing, win ≥ 80%** (data M1) | MACD cross M1 kuat (≥0,5 ATR), sesi Asia, bias EMA50 harian | SL $3, +$0,5 → SL ke +$1, trailing $4,5 |
+| **`asia_nr7_engulf`** | **FINAL: SL $4,5 (45 pips) tetap, tanpa TP, breakeven di close M1 + trailing, win 84% di 3 periode spot** (data M1) | NR7 breakout M15 + bias H1 (buy/sell) digabung engulfing bullish M5 di EMA20 + bias M15 (buy), sesi Asia 00–07 UTC | SL $4,5; close M1 ≥ +$0,75 → SL ke +$0,6; trailing $18 |
+| `macd_asia_m1` | ~~SL $3, win ≥ 80%~~ **GAGAL validasi independen** (win 64–67%, rugi di data spot Jan & Agu–Okt 2026) | MACD cross M1, sesi Asia, bias harian | SL $3, +$0,5 → SL +$1, trailing $4,5 |
 | `asia_nr7_runner` | SL $3 tetap + trailing (riset entry) | NR7 breakout M15, sesi Asia, bias H1 | SL $3, trailing $9 |
 | `sweep_sell_runner` | SL $3 tetap + trailing (riset entry) | Liquidity sweep sell M15, tren H1 turun | SL $3, trailing $9 |
 | `squeeze_runner` | SL tetap $3, tanpa TP, SL plus + trailing | BB squeeze breakout M15 | SL $3, BE+$1 setelah +$3, trailing $15 |
@@ -84,6 +85,11 @@ Opsi penting:
 - Kalau harga gap melewati SL/TP, eksekusi di harga open (mensimulasikan slippage).
 - Slippage saat berita, swap/biaya inap, dan spread yang melebar tidak dimodelkan, jadi hasil live biasanya lebih buruk.
 - GC=F adalah harga futures, sedikit berbeda dari spot XAUUSD di broker. Untuk hasil paling realistis, pakai CSV dari MT5 broker Anda.
+
+## Validasi strategi final
+```bash
+python validate_final.py   # asia_nr7_engulf di 3 periode spot Dukascopy 2026 (butuh data/duka_m1_*.csv, lihat RESEARCH.md)
+```
 
 ## Test
 

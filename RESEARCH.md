@@ -239,7 +239,9 @@ Kandidat ketiga (NR7 M5 long + partial 50% di 1R, win rate 55%, +31%) rapuh terh
 
 ---
 
-# FINAL: SL $3 tetap, tanpa TP, SL bergerak, win rate ≥ 80% — `macd_asia_m1`
+# ~~FINAL~~ GAGAL VALIDASI: SL $3 tetap, win rate ≥ 80% — `macd_asia_m1`
+
+> **Catatan 8 Nov 2026 (setelah validasi independen):** hasil di bawah ini hanya berlaku di jendela 4 minggu data Yahoo tempat strategi ini dipilih. Di data spot Dukascopy Jan 2026 dan Agu–Okt 2026 win rate turun ke 64–67% dan periode Agu–Okt rugi −22%. Lihat bagian *Validasi independen & riset multi-periode* di bawah.
 
 ## Mengapa scan sebelumnya mentok di 60%
 Mesin lama memindahkan SL hanya saat candle M5/M15 **ditutup**. Satu candle bisa naik +$2 lalu balik menyentuh SL −$3 sebelum tutup, sehingga breakeven tidak pernah sempat aktif. Solusi: sinyal boleh di TF apa pun, tapi **eksekusi dan manajemen SL dilakukan di M1** (`mtf.py`), mendekati eksekusi tick MT5. Dengan ini breakeven +$0,75 langsung memberi win rate 81% (sebelumnya 32%) pada strategi yang sama.
@@ -300,4 +302,107 @@ Risiko : 1% per trade (0,33 lot per $10.000)
 python backtest.py --source csv --csv data/GC_1m_30d.csv --strategies macd_asia_m1 --spread 0.4 --split 0.5
 python hiwin_m1.py          # scan 81.648 kombinasi (±20 menit)
 python deep_dive.py '{"tf":"1m","fam":"old","entry":"macd","bias":"d1","session":"asia","side":"both","be":0.5,"plus":1.0,"trail":4.5}'
+```
+
+---
+
+# Validasi independen & riset multi-periode (8 Nov 2026) — hasil akhir: `asia_nr7_engulf`
+
+## 1. Validasi `macd_asia_m1` di data independen: GAGAL
+Data baru: spot XAUUSD Dukascopy M1 (`fetch_m1.py`), tiga periode dengan rezim berbeda, total 15 minggu / 100.256 candle:
+
+| Periode | Rezim | Bar M1 |
+|---|---|---|
+| 12–30 Jan 2026 | emas naik kuat (4.537 → 4.895) | 19.108 |
+| 17 Agu – 9 Okt 2026 | turun / sideways (4.369 → 4.190) | 53.668 |
+| 12 Okt – 6 Nov 2026 | turun (jendela yang sama dengan data Yahoo riset lama) | 27.480 |
+
+`macd_asia_m1` tanpa ubah parameter (spread $0,40):
+
+| Periode | Trade | Win | expR | Return |
+|---|---|---|---|---|
+| Jan | 45 | 66,7% | +0,14 | +5,8% |
+| Agu–Okt | 214 | 63,6% | −0,11 | **−22,3%** |
+| Okt–Nov (spot) | 88 | 81,8% | +0,32 | +31,6% |
+
+Di jendela Okt–Nov hasilnya tereplikasi di data spot, jadi 85% yang lama bukan masalah sumber data, melainkan **overfit ke satu rezim 4 minggu**. Strategi ini dicabut.
+
+## 2. Berapa win rate yang "gratis" dari manajemen SL saja?
+Benchmark entry **acak** (`multi_scan.py --bench`, 5 seed, semua sesi) dengan SL tetap + breakeven cepat + trailing yang sama:
+
+| SL | Pemicu BE dicek di | Win acak | expR acak |
+|---|---|---|---|
+| $3 | high/low M1 ("tick") | 69–78% | −0,20 … −0,28 |
+| $3 | close M1 | 55–64% | ≈ −0,10 (= biaya spread) |
+| $4,5 | close M1, BE +0,75 | 59% | −0,16 |
+
+Pelajaran: dengan SL tetap dan BE cepat, win rate sebagian besar ditentukan oleh **rasio SL : pemicu BE**, bukan oleh entry. Win rate 75% bisa dicapai entry acak, tetapi expectancy-nya negatif. Jadi syarat yang sebenarnya menguji strategi adalah **profit di tiap periode**, bukan win rate.
+
+Temuan penting kedua: pemicu BE gaya tick (SL pindah begitu high/low menyentuh +$0,75) memberi win rate 89% tetapi **rugi** (expR −0,02): noise M1 ($1,8–2,5 per candle) menyentuh pemicu lalu menyentuh SL plus, sehingga runner tidak pernah terbentuk. Pemicu di **close M1** (candle harus menutup ≥ +$0,75) adalah konfirmasi yang jauh lebih kuat dan menjadi kunci hasil di bawah. Keduanya tersedia di mesin (`be_touch`), dan EA harus memakai versi close M1.
+
+## 3. Scan multi-periode: kandidat harus lolos di 3 periode sekaligus
+`multi_scan.py`: 6.804 kombinasi (18 entry lama+baru × sinyal M1/M5/M15 × bias none/M15/H1/D1 × sesi × arah × 3 manajemen) × 3 periode, diulang untuk SL $3, $4,5, $6 dan dua mode BE; lalu `stage2.py` (grid manajemen + partial TP) dan `final_grid.py` (SL $3–5 untuk entry terbaik dan portofolionya). Kriteria lolos ditetapkan sebelum melihat hasil: ≥ 10 trade, win ≥ 75% dan profit di **setiap** periode, win gabungan ≥ 80%, ≥ 60% minggu profit.
+
+| SL | Kombinasi lolos | Terbaik yang profit di semua periode |
+|---|---|---|
+| **$3 (30 pips)** | **0 dari 6.804** (kedua mode BE; stage 2: 0 dari 2.040) | NR7 M15 Asia + bias H1: win 78,6%, 84 trade, 6/15 minggu |
+| $4 (40 pips) | 28 dari 1.155 (grid akhir) | portofolio NR7+engulfing: win 80,7%, PF 2,2 |
+| $4,5 (45 pips) | 10 dari 6.804; 90 dari 1.155 | portofolio NR7+engulfing: win 83,9%, PF 2,7 |
+| $6 (60 pips) | 0 (win tinggi tapi profit tidak konsisten) | — |
+
+Entry yang berulang kali muncul di puncak untuk **setiap** ukuran SL dan kedua mode BE: **NR7 breakout M15 sesi Asia** dan **engulfing bullish M5 di EMA20 sesi Asia**. Itu alasan keduanya dipilih, bukan karena satu angka terbaik.
+
+**Kesimpulan untuk aturan 30 pips:** tidak ada kombinasi dari ±20.000 yang diuji yang mencapai win ≥ 80% *dan* profit konsisten di 3 rezim. Penyebabnya struktural: range median satu candle M1 emas $1,8–2,5, sehingga SL $3 ≈ 1,5 candle; SL sering tersentuh oleh noise sebelum breakeven sempat aktif. Dengan SL $4,5 target tercapai; $4 berada di batas (spread > $0,4 menjatuhkannya di bawah 80%).
+
+## 4. Strategi final: `asia_nr7_engulf` (SL $4,5 = 45 pips)
+Aturan (sesi Asia 00:00–07:00 UTC = 07:00–14:00 WIB; data M1 wajib):
+1. **NR7 M15:** candle M15 sebelumnya adalah yang range-nya tersempit dari 7 candle terakhir, dan candle M15 sekarang menutup di atas high-nya (BUY) atau di bawah low-nya (SELL). Arah harus searah bias H1 (EMA20 > EMA50 H1 untuk BUY, sebaliknya SELL; hanya candle H1 yang sudah selesai).
+2. **Engulfing bullish M5:** candle M5 hijau menelan candle merah sebelumnya, candle merah itu menyentuh EMA20 M5, EMA20 > EMA50 M5, dan bias M15 naik (close M15 > EMA50 M15). Hanya BUY.
+3. Satu posisi dalam satu waktu; entry di open candle M1 berikutnya. **SL tetap $4,5**, tanpa TP.
+4. **Breakeven:** begitu ada candle M1 yang *menutup* ≥ entry + $0,75, SL pindah ke entry + $0,60.
+5. **Trailing:** SL mengikuti close M1 − $18 (chandelier); SL hanya bergerak searah posisi.
+
+Hasil di 3 periode spot Dukascopy (`validate_final.py`, spread $0,30, risiko 1%, modal $10.000):
+
+| Periode | Trade | Win | expR | PF | Return | Max DD | Kalah beruntun |
+|---|---|---|---|---|---|---|---|
+| Jan 2026 (naik) | 42 | 81,0% | +0,70 | 4,6 | +32,0% | −5,9% | 2 |
+| Agu–Okt 2026 (turun/sideways) | 78 | 83,3% | +0,15 | 1,8 | +11,8% | −8,2% | 3 |
+| Okt–Nov 2026 (turun) | 40 | 80,0% | +0,53 | 3,5 | +21,3% | −5,8% | 2 |
+| **Gabungan 15 minggu** | **160** | **81,9%** | **+0,39** | **3,1** | | | 3 |
+
+- BUY 111 trade (win 80%, +49R), SELL 49 trade (win 86%, +13R). Tanpa 3 trade terbaik tetap +19,8R.
+- Anatomi: 29 SL penuh, 118 win kecil (median +0,10R = SL plus), 13 trade ≥ 0,5R, 9 trade ≥ 2R (maks +20R). Profit datang dari runner; win rate tinggi adalah efek SL plus.
+- Durasi median 6 menit, rata-rata 31 menit, maksimal 9,6 jam.
+- Minggu profit 8/15; mingguan R dari −3,3 sampai +25,3. Ini titik lemah utama: profit terkonsentrasi di minggu-minggu tren.
+
+Ketahanan:
+
+| Variasi | Win gabungan | Return min. periode |
+|---|---|---|
+| Spread $0,2 / 0,3 / 0,4 / 0,5 / 0,6 / 0,8 | 82,8 / 81,9 / 81,9 / 80,6 / 80,0 / 78,1% | +12,8 / +11,8 / +10,7 / +8,5 / +7,5 / +3,1% |
+| SL $4,0 / $5,0 | 78,8 / 81,9% | +11,2 / +9,2% |
+| BE +0,5→+0,3 / +1,0→+0,6 | 84,5 / 80,5% | +9,2 / +11,8% |
+| Trailing $9 / 13,5 / 25 | 81,9 / 81,9 / 81,6% | +1,8 / +8,3 / +11,2% |
+| **BE gaya tick (high/low)** | 89,1% | **−2,8% (rugi di 2 periode)** |
+
+## 5. Batasan yang jujur
+1. **Aturan 30 pips tidak terpenuhi.** Strategi final memakai SL 45 pips. Di 30 pips, kandidat terbaik hanya 78,6% dengan 84 trade dan konsistensi mingguan buruk.
+2. **Bias seleksi tetap ada.** Entry dipilih setelah melihat ketiga periode (±20.000 kombinasi). Mitigasi: entry yang sama menang untuk semua SL dan kedua mode BE, parameter tetangga stabil, dan 3 rezim berbeda. Tetapi 160 trade / 15 minggu masih sedikit; hasil riil wajar lebih rendah.
+3. **Konsistensi mingguan 8/15.** Siap menghadapi 2–3 minggu berturut-turut minus kecil sebelum satu minggu besar.
+4. Spread: target bertahan sampai $0,6 di sesi Asia. Spread Asia banyak broker lebih lebar daripada London; pakai akun raw/ECN.
+5. Eksekusi harus EA: BE dicek di close M1, trailing tiap M1, durasi median 6 menit. BE gaya tick **merusak** strategi (lihat tabel), jadi EA tidak boleh memindahkan SL pada sentuhan high/low.
+6. Data candle bid Dukascopy, bukan tick broker; slippage saat berita tidak dimodelkan. Hindari entry 15 menit sekitar rilis data besar.
+
+## 6. Reproduksi
+```bash
+python fetch_m1.py --start 2026-01-12 --end 2026-01-30 --out data/duka_m1_jan26.csv
+python fetch_m1.py --start 2026-08-17 --end 2026-10-09 --out data/duka_m1_augoct26.csv
+python fetch_m1.py --start 2026-10-12 --end 2026-11-07 --out data/duka_m1_octnov26.csv
+python validate_final.py                                   # strategi final, 3 periode + sensitivitas
+python validate_final.py --strategy macd_asia_m1 --spread 0.4   # bukti kegagalan strategi lama
+python backtest.py --source csv --csv data/duka_m1_augoct26.csv --strategies asia_nr7_engulf --spread 0.3 --split 0
+SL_USD=3 BE_MODE=m1close python multi_scan.py              # scan 6.804 kombinasi × 3 periode (±10 menit)
+SL_USD=3 BE_MODE=m1close python multi_scan.py --bench      # benchmark entry acak
+python stage2.py && python final_grid.py
 ```
