@@ -7,6 +7,7 @@ Strategi yang diuji:
   donchian      - Breakout channel 20 bar, trailing exit channel 10 bar
   session_break - Breakout range sesi Asia saat London/NY (butuh data intraday)
   mean_revert   - Bollinger Band + RSI, exit di garis tengah
+  sell_rally_scalp - Win rate tinggi (~90%): MACD sell-the-rally M5, ADX>20, sesi London-NY
   trend_breakout- STRATEGI FINAL hasil riset: Donchian 20 + filter EMA50 harian + trailing 3 ATR (long)
 
 Sumber data:
@@ -219,7 +220,25 @@ def strat_trend_breakout(df, entry_n=20, bias_ema=50, sl_atr=1.5, trail_atr=3.0)
     return plan
 
 
+def strat_sell_rally_scalp(df, adx_min=20, sl_atr=3.5, tp_rr=0.25, start_hour=7, end_hour=20):
+    """STRATEGI WIN RATE TINGGI (riset 1 bulan, lihat RESEARCH.md). Untuk M5, kondisi tren turun.
+    SELL saat MACD(12,26,9) memotong signal ke bawah DI ATAS level 0 (harga sedang memantul naik),
+    hanya jika ADX(14) > 20 dan jam 07-20 UTC (London-NY).
+    SL 3.5 ATR, TP = 0.25 x SL. Win rate ~89-92%, tapi 1 kalah = hapus ~4 menang."""
+    from research import adx  # impor lokal: research.py juga mengimpor modul ini
+    c = df["close"]
+    a = atr(df)
+    m = ema(c, 12) - ema(c, 26)
+    sig = ema(m, 9)
+    hour = pd.Series(df.index.hour, index=df.index)
+    short = (m < sig) & (m.shift(1) >= sig.shift(1)) & (m > 0) & (adx(df) > adx_min) \
+        & (hour >= start_hour) & (hour < end_hour)
+    no = pd.Series(False, index=df.index)
+    return _plan(df, no, short, sl_atr * a, tp_rr * sl_atr * a, no, no)
+
+
 STRATEGIES = {
+    "sell_rally_scalp": strat_sell_rally_scalp,
     "trend_breakout": strat_trend_breakout,
     "ema_trend": strat_ema_trend,
     "donchian": strat_donchian,

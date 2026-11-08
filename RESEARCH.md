@@ -83,3 +83,45 @@ python backtest.py --source csv --csv data/GC_D1.csv --spread 0.4
 python fetch_data.py --start 2015 --out data/XAUUSD_H1.csv  # data spot H1 (lambat, bisa dilanjutkan)
 python research.py --csv data/XAUUSD_H1.csv --tfs 1h,4h --is-end 2022-12-31
 ```
+
+---
+
+# Riset 1 bulan terakhir: win rate > 80%
+
+Data: Yahoo `GC=F` M5/M15/H1, **7 Okt – 6 Nov 2026** (bulan ini), dicek ulang di **8 Sep – 6 Okt 2026** (bulan lalu). Spread $0,40, risiko 1%.
+
+- `month_scan.py`: 9.000 kombinasi. Hanya 30% yang profit di bulan ini dan 10% yang profit di dua bulan.
+- `win_scan.py`: 16.200 kombinasi dengan TP kecil. **437** punya win rate ≥ 80% di bulan ini, **177** di dua bulan, dan **114** di dua bulan sekaligus tetap profit.
+- Rata-rata kombinasi dengan win rate ≥ 80% justru **rugi** di bulan lalu (expectancy −0,04R). Win rate tinggi tidak sama dengan profit.
+
+## Strategi: `sell_rally_scalp` (M5)
+
+```
+Arah    : SELL saja
+Entry   : MACD(12,26,9) memotong signal ke bawah, di atas level 0 (sell saat harga memantul naik)
+Filter  : ADX(14) > 20, jam 07–20 UTC (14:00–03:00 WIB)
+SL      : 3,5 × ATR(14)
+TP      : 0,25 × SL (≈ 0,875 ATR)
+```
+
+| Risiko | Periode | Trade | Win rate | Return | Max DD | Kalah beruntun |
+|---|---|---|---|---|---|---|
+| 1% | Bulan lalu | 53 | 88,7% | +5,2% | −3,5% | 3 |
+| 1% | Bulan ini | 26 | **92,3%** | +3,7% | −1,4% | 1 |
+| 2% | Bulan lalu | 53 | 88,7% | +10,6% | −7,0% | 3 |
+| 2% | Bulan ini | 26 | **92,3%** | +7,5% | −2,7% | 1 |
+
+- Semua minggu di bulan ini profit.
+- Tetap profit dengan spread $0,20 sampai $0,80.
+- Rata-rata menang +0,24R, rata-rata kalah −1,01R, durasi rata-rata 1,1 jam.
+
+**Titik impas: win rate ≈ 81%.** Kalau win rate turun di bawah sekitar 81%, strategi ini mulai rugi. Margin aman hanya sekitar 8–11 poin.
+
+Kandidat lain yang lolos:
+- MACD versi TP 0,4R: win 81–82%, +3–7%/bulan
+- Donchian-55 sell M15 TP 0,25R: win 86% di dua bulan, +3%/bulan
+
+**Risiko:**
+- Hanya 2 bulan data, dan keduanya dalam fase emas turun dan bergejolak.
+- Saat emas berbalik naik kuat, sell saat harga memantul akan kena SL besar berulang kali. Hentikan strategi jika harian close di atas EMA50 harian.
+- Uji di akun demo dulu.

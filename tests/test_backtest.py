@@ -111,3 +111,10 @@ def test_final_strategy_is_long_only_with_trailing():
     plan = bt.strat_trend_breakout(df)
     assert (plan["entry"] >= 0).all() and (plan["entry"] == 1).any()
     assert plan["trail"].notna().any()
+
+
+def test_sell_rally_scalp_is_short_only_with_small_tp():
+    df = bt.make_demo(n_days=60)
+    plan = bt.strat_sell_rally_scalp(df)
+    assert (plan["entry"] <= 0).all() and (plan["entry"] == -1).any()
+    assert (plan["tp"].dropna() < plan["sl"].dropna()).all()
