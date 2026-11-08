@@ -396,6 +396,9 @@ def run_backtest(df: pd.DataFrame, plan: pd.DataFrame, cfg: Config, start: int =
     # Opsional: partial TP. Tutup `partial_frac` dari posisi di jarak `partial_tp` ($), lalu SL ke entry + be_plus
     ptp = plan["partial_tp"].to_numpy() if "partial_tp" in plan.columns else None
     pfrac = plan["partial_frac"].to_numpy() if "partial_frac" in plan.columns else None
+    # Opsional: be_touch=True -> pemicu breakeven dicek di high/low bar (seperti EA tick), bukan hanya di close.
+    # Konservatif: kalau di bar yang sama harga juga sudah kembali ke SL baru, posisi dianggap tertutup di SL baru.
+    be_touch = plan["be_touch"].to_numpy() if "be_touch" in plan.columns else None
     times = df.index
     half = cfg.spread / 2
 
@@ -459,6 +462,19 @@ def run_backtest(df: pd.DataFrame, plan: pd.DataFrame, cfg: Config, start: int =
                 plus = 0.0 if be_plus is None or np.isnan(be_plus[i]) else be_plus[i]
                 new_sl = pos.entry_price + d * plus
                 pos.sl_price = max(pos.sl_price, new_sl) if d == 1 else min(pos.sl_price, new_sl)
+
+        # 2a') Breakeven versi tick (be_touch): pemicu dicek di ekstrem bar, SL baru = entry + plus (plus <= pemicu)
+        if pos is not None and be_touch is not None and be_touch[i] and be_trig is not None and not np.isnan(be_trig[i]):
+            d = pos.direction
+            ext = h[i] if d == 1 else l[i]
+            if d * (ext - pos.entry_price) >= be_trig[i]:
+                plus = 0.0 if be_plus is None or np.isnan(be_plus[i]) else min(be_plus[i], be_trig[i])
+                new_sl = pos.entry_price + d * plus
+                if (d == 1 and new_sl > pos.sl_price) or (d == -1 and new_sl < pos.sl_price):
+                    pos.sl_price = new_sl
+                    back = l[i] <= new_sl if d == 1 else h[i] >= new_sl
+                    if back:
+                        close(i, new_sl, "BE")
 
         # 2b) Trailing stop (chandelier): geser SL mengikuti close, berlaku mulai bar berikutnya
         if pos is not None:

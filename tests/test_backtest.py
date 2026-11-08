@@ -208,3 +208,22 @@ def test_macd_asia_m1_rules():
     assert len(hours) > 0 and (hours < 7).all()
     assert (plan["sl"] == 3.0).all() and plan["tp"].isna().all()
     assert (plan["be_trigger"] == 0.5).all() and (plan["be_plus"] == 1.0).all() and (plan["trail"] == 4.5).all()
+
+
+def test_be_touch_moves_sl_on_intrabar_high_and_closes_same_bar_if_price_returns():
+    idx = pd.date_range("2026-01-01", periods=6, freq="1min")
+    df = pd.DataFrame({"open": [100, 100, 100.5, 100.1, 100.1, 100.1],
+                       "high": [100, 100.9, 100.2, 100.2, 100.2, 100.2],
+                       "low":  [100, 100.4, 99.9, 99.9, 99.9, 99.9],
+                       "close": [100, 100.5, 100.1, 100.1, 100.1, 100.1]}, index=idx)
+    plan = bt._plan(df, pd.Series([True] + [False] * 5, index=idx), pd.Series(False, index=idx),
+                 pd.Series(3.0, index=idx), np.nan, pd.Series(False, index=idx), pd.Series(False, index=idx))
+    plan["be_trigger"], plan["be_plus"], plan["be_touch"] = 0.75, 0.3, True
+    trades, _ = bt.run_backtest(df, plan, bt.Config(spread=0.0))
+    # bar 1: high 100.9 >= entry 100 + 0.75 -> SL ke 100.3; low bar 1 (100.4) belum menyentuh
+    # bar 2: low 99.9 <= 100.3 -> kena SL di 100.3 (profit +0.3)
+    assert len(trades) == 1 and trades[0].reason == "SL" and abs(trades[0].exit_price - 100.3) < 1e-9
+
+    df2 = df.copy(); df2.loc[idx[1], "low"] = 100.0  # harga kembali di bar yang sama -> ditutup di SL baru (konservatif)
+    trades2, _ = bt.run_backtest(df2, plan, bt.Config(spread=0.0))
+    assert trades2[0].reason == "BE" and abs(trades2[0].exit_price - 100.3) < 1e-9 and trades2[0].exit_time == idx[1]
