@@ -90,3 +90,17 @@ def test_all_strategies_run_on_demo_data():
         trades, curve = bt.run_backtest(df, plan, CFG)
         assert len(curve) == len(df)
         assert len(trades) > 0, name
+
+
+def test_trailing_stop_locks_profit():
+    df = make_df([
+        [2000, 2001, 1999, 2000],
+        [2000, 2010, 1999, 2010],  # masuk 2000, close 2010 -> SL naik ke 2005
+        [2010, 2030, 2009, 2030],  # close 2030 -> SL naik ke 2025
+        [2030, 2031, 2020, 2022],  # kena trailing di 2025
+    ])
+    plan = make_plan(df, 0, 1, sl=10)
+    plan["trail"] = 5.0
+    trades, _ = bt.run_backtest(df, plan, CFG)
+    assert trades[0].reason == "SL" and trades[0].exit_price == 2025
+    assert trades[0].r_multiple == pytest.approx(2.5)

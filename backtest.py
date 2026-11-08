@@ -136,6 +136,7 @@ def atr(df: pd.DataFrame, n: int = 14) -> pd.Series:
 #   tp         : jarak take profit (dalam $), NaN = tanpa TP tetap
 #   exit_long  : True -> tutup posisi buy di open bar berikutnya
 #   exit_short : True -> tutup posisi sell di open bar berikutnya
+#   trail      : (opsional) jarak trailing stop dalam $, NaN = tanpa trailing
 # ---------------------------------------------------------------------------
 def _plan(df, long, short, sl, tp, exit_long, exit_short) -> pd.DataFrame:
     entry = long.fillna(False).astype(int) - short.fillna(False).astype(int)
@@ -244,6 +245,7 @@ def run_backtest(df: pd.DataFrame, plan: pd.DataFrame, cfg: Config, start: int =
     entry_sig = plan["entry"].to_numpy()
     sl_d, tp_d = plan["sl"].to_numpy(), plan["tp"].to_numpy()
     ex_long, ex_short = plan["exit_long"].to_numpy(), plan["exit_short"].to_numpy()
+    trail = plan["trail"].to_numpy() if "trail" in plan.columns else None
     times = df.index
     half = cfg.spread / 2
 
@@ -292,6 +294,11 @@ def run_backtest(df: pd.DataFrame, plan: pd.DataFrame, cfg: Config, start: int =
             elif hit_tp:
                 gap = (o[i] > pos.tp_price) if d == 1 else (o[i] < pos.tp_price)
                 close(i, o[i] if gap else pos.tp_price, "TP")
+
+        # 2b) Trailing stop (chandelier): geser SL mengikuti close, berlaku mulai bar berikutnya
+        if pos is not None and trail is not None and not np.isnan(trail[i]):
+            new_sl = c[i] - pos.direction * trail[i]
+            pos.sl_price = max(pos.sl_price, new_sl) if pos.direction == 1 else min(pos.sl_price, new_sl)
 
         # 3) Sinyal di close bar ini -> dieksekusi di open bar berikutnya
         if pos is not None:
