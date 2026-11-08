@@ -336,7 +336,40 @@ def strat_macd_asia_m1(df, macd_min_atr=0.5, asia_end=7, sl_usd=3.0, be_trigger=
     return plan
 
 
+
+def strat_asia_nr7_engulf(df, sl_usd=4.5, be_trigger=0.75, be_plus=0.6, trail_usd=18.0, asia_end=7, be_mode="m1close"):
+    """Portofolio sesi Asia (00-07 UTC), WAJIB data M1. Dua entry digabung, satu posisi dalam satu waktu:
+      1) NR7 breakout M15: bar sebelumnya range tersempit dari 7 bar, close menembus high/low-nya; arah ikut bias H1
+         (EMA20 vs EMA50 H1 yang sudah selesai). BUY dan SELL.
+      2) Engulfing bullish M5 yang menyentuh EMA20 saat EMA20 > EMA50, dengan bias M15 (close > EMA50 M15) naik. Hanya BUY.
+    Eksekusi & manajemen di M1: SL tetap (default $4,5 = 45 pips), breakeven di CLOSE M1 (be_mode="m1close": kalau
+    close M1 >= entry + be_trigger, SL pindah ke entry + be_plus), lalu trailing chandelier trail_usd dari close. Tanpa TP.
+    be_mode="tick" (pemicu di high/low) menghasilkan win rate lebih tinggi tetapi rugi: runner terpotong oleh noise.
+    Hasil 3 periode spot Dukascopy (Jan, Agu-Okt, Okt-Nov 2026): lihat RESEARCH.md."""
+    import entry_scan as es
+    import mtf
+
+    def part(rule, name, bias, side):
+        d = mtf.resample(df, rule)
+        I = es.precompute(d)
+        long, short = (x.fillna(False).astype(bool) for x in es.entry(name, I))
+        b = I[f"bias_{bias}"]
+        asia = I["hour"] < asia_end
+        long, short = long & (b > 0) & asia, short & (b < 0) & asia
+        if side == "long":
+            short = short & False
+        no = pd.Series(False, index=d.index)
+        plan = _plan(d, long, short, pd.Series(sl_usd, index=d.index), np.nan, no, no)
+        return mtf.to_m1(plan, df, rule)
+
+    p1, p2 = part("15min", "nr7", "h1", "both"), part("5min", "engulf", "m15", "long")
+    plan = p1.copy()
+    plan["entry"] = np.where(p1["entry"] != 0, p1["entry"], p2["entry"])
+    plan["be_trigger"], plan["be_plus"], plan["trail"], plan["be_touch"] = be_trigger, be_plus, trail_usd, be_mode == "tick"
+    return plan
+
 STRATEGIES = {
+    "asia_nr7_engulf": strat_asia_nr7_engulf,
     "macd_asia_m1": strat_macd_asia_m1,
     "asia_nr7_runner": strat_asia_nr7_runner,
     "sweep_sell_runner": strat_sweep_sell_runner,

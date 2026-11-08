@@ -227,3 +227,19 @@ def test_be_touch_moves_sl_on_intrabar_high_and_closes_same_bar_if_price_returns
     df2 = df.copy(); df2.loc[idx[1], "low"] = 100.0  # harga kembali di bar yang sama -> ditutup di SL baru (konservatif)
     trades2, _ = bt.run_backtest(df2, plan, bt.Config(spread=0.0))
     assert trades2[0].reason == "BE" and abs(trades2[0].exit_price - 100.3) < 1e-9 and trades2[0].exit_time == idx[1]
+
+
+def test_asia_nr7_engulf_rules():
+    rng = np.random.default_rng(3)
+    idx = pd.date_range("2026-03-02", periods=5 * 1440, freq="1min")
+    c = 4000 + np.cumsum(rng.normal(0, 0.8, len(idx)))
+    df = pd.DataFrame({"open": c, "high": c + rng.uniform(0, 1.2, len(idx)), "low": c - rng.uniform(0, 1.2, len(idx)), "close": c}, index=idx)
+    plan = bt.strat_asia_nr7_engulf(df)
+    assert len(plan) == len(df) and not plan["be_touch"].any()
+    assert bt.strat_asia_nr7_engulf(df, be_mode="tick")["be_touch"].all()
+    ent = plan[plan["entry"] != 0]
+    assert len(ent) > 0 and (ent.index.hour < 7).all()               # hanya sesi Asia
+    assert (ent["sl"] == 4.5).all() and ent["tp"].isna().all()         # SL tetap, tanpa TP
+    assert (ent.index.minute % 5 == 4).all()                            # sinyal di bar M1 terakhir dari bar M5/M15
+    trades, _ = bt.run_backtest(df, plan, bt.Config(spread=0.3))
+    assert all(abs(t.entry_price - t.sl_price) <= 4.5 + 1e-9 for t in trades)
