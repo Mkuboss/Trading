@@ -153,3 +153,33 @@ def test_squeeze_runner_fixed_sl_no_tp():
     assert (plan["sl"] == 3.0).all() and plan["tp"].isna().all()
     assert (plan["be_trigger"] == 3.0).all() and (plan["trail"] == 15.0).all()
     assert (plan["entry"] != 0).any()
+
+
+def test_partial_tp_then_breakeven():
+    df = make_df([
+        [2000, 2001, 1999, 2000],
+        [2000, 2004, 1999, 2003],  # masuk 2000; partial 50% di 2003 (+3 = 1R), SL ke 2001
+        [2003, 2004, 2000, 2001],  # low 2000 kena SL 2001 untuk sisa 50%
+    ])
+    plan = make_plan(df, 0, 1, sl=3)
+    plan["partial_tp"], plan["partial_frac"], plan["be_plus"] = 3.0, 0.5, 1.0
+    trades, curve = bt.run_backtest(df, plan, CFG)
+    t = trades[0]
+    # 50% x +1R + 50% x (+1/3 R) = 0.5 + 0.1667
+    assert t.r_multiple == pytest.approx(0.5 + 0.5 / 3)
+    assert t.exit_price == 2001
+    assert curve.iloc[-1] == pytest.approx(10_000 + t.pnl)
+
+
+def test_asia_nr7_runner_only_trades_in_asia_session():
+    df = bt.make_demo(n_days=90)
+    plan = bt.strat_asia_nr7_runner(df)
+    hours = plan.index[plan["entry"] != 0].hour
+    assert len(hours) > 0 and (hours < 7).all()
+    assert (plan["sl"] == 3.0).all() and plan["tp"].isna().all() and (plan["trail"] == 9.0).all()
+
+
+def test_sweep_sell_runner_is_short_only():
+    df = bt.make_demo(n_days=90)
+    plan = bt.strat_sweep_sell_runner(df)
+    assert (plan["entry"] <= 0).all() and (plan["entry"] == -1).any()

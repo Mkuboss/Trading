@@ -7,6 +7,8 @@ Strategi yang diuji:
   donchian      - Breakout channel 20 bar, trailing exit channel 10 bar
   session_break - Breakout range sesi Asia saat London/NY (butuh data intraday)
   mean_revert   - Bollinger Band + RSI, exit di garis tengah
+  asia_nr7_runner - Aturan SL $3 tetap + trailing: NR7 breakout M15 sesi Asia, bias H1 (riset entry)
+  sweep_sell_runner - Aturan SL $3 tetap + trailing: liquidity sweep sell M15, bias H1 turun
   squeeze_runner  - Aturan SL $3 tetap + tanpa TP + SL plus/trailing: BB squeeze breakout M15
   sell_rally_scalp - Win rate tinggi (~90%): MACD sell-the-rally M5, ADX>20, sesi London-NY
   trend_breakout- STRATEGI FINAL hasil riset: Donchian 20 + filter EMA50 harian + trailing 3 ATR (long)
@@ -143,6 +145,8 @@ def atr(df: pd.DataFrame, n: int = 14) -> pd.Series:
 #   trail_start: (opsional) trailing baru aktif setelah profit >= nilai ini ($)
 #   be_trigger : (opsional) setelah profit >= nilai ini ($), SL dipindah ke entry + be_plus
 #   be_plus    : (opsional) jarak SL di atas entry setelah breakeven ($)
+#   partial_tp : (opsional) jarak target partial ($); saat tersentuh, partial_frac posisi ditutup, SL ke entry+be_plus
+#   partial_frac: (opsional) porsi yang ditutup di partial (default 0.5)
 # ---------------------------------------------------------------------------
 def _plan(df, long, short, sl, tp, exit_long, exit_short) -> pd.DataFrame:
     entry = long.fillna(False).astype(int) - short.fillna(False).astype(int)
@@ -260,7 +264,49 @@ def strat_squeeze_runner(df, bb_n=20, bb_k=2.0, sq_lookback=120, sq_pct=0.2,
     return plan
 
 
+def _h1_bias(df: pd.DataFrame, fast: int = 20, slow: int = 50) -> pd.Series:
+    """Arah tren H1 (EMA20 vs EMA50) dari bar H1 yang sudah selesai, tanpa look-ahead."""
+    c = df["close"].resample("1h", label="left", closed="left").last().dropna()
+    return np.sign(ema(c, fast) - ema(c, slow)).shift(1).reindex(df.index, method="ffill")
+
+
+def strat_asia_nr7_runner(df, sl_usd=3.0, trail_usd=9.0, asia_end=7):
+    """ATURAN SL $3 TETAP + TANPA TP + TRAILING. Untuk M15. Hasil riset entry (lihat RESEARCH.md).
+    Entry : candle sebelumnya adalah NR7 (range tersempit dari 7 candle), lalu close menembus high-nya
+            (BUY) atau low-nya (SELL), hanya di sesi Asia (00-07 UTC) dan searah tren H1 (EMA20 vs EMA50).
+    Exit  : SL $3 tetap, trailing $9 dari close. Tidak ada TP.
+    Kunci : sesi Asia tenang (ATR M15 lebih kecil), jadi SL $3 tidak tersapu noise."""
+    c, h, l = df["close"], df["high"], df["low"]
+    rng = h - l
+    nr7 = (rng <= rng.rolling(7).min()).shift(1).fillna(False).astype(bool)
+    bias = _h1_bias(df)
+    asia = pd.Series(df.index.hour < asia_end, index=df.index)
+    long = nr7 & (c > h.shift(1)) & (bias > 0) & asia
+    short = nr7 & (c < l.shift(1)) & (bias < 0) & asia
+    no = pd.Series(False, index=df.index)
+    plan = _plan(df, long, short, pd.Series(sl_usd, index=df.index), np.nan, no, no)
+    plan["trail"] = trail_usd
+    return plan
+
+
+def strat_sweep_sell_runner(df, n=20, sl_usd=3.0, trail_usd=9.0):
+    """ATURAN SL $3 TETAP + TANPA TP + TRAILING. Untuk M15. Pasangan strat_asia_nr7_runner (korelasi negatif).
+    Entry : liquidity sweep: high menembus high tertinggi 20 candle sebelumnya, tapi close kembali di bawahnya
+            dengan candle bearish -> SELL. Hanya saat tren H1 turun (EMA20 < EMA50). Sisi buy tidak dipakai:
+            di riset, sweep buy rugi konsisten.
+    Exit  : SL $3 tetap, trailing $9 dari close. Tidak ada TP."""
+    o, c, h = df["open"], df["close"], df["high"]
+    hh = h.rolling(n).max().shift(1)
+    short = (h > hh) & (c < hh) & (c < o) & (_h1_bias(df) < 0)
+    no = pd.Series(False, index=df.index)
+    plan = _plan(df, no, short, pd.Series(sl_usd, index=df.index), np.nan, no, no)
+    plan["trail"] = trail_usd
+    return plan
+
+
 STRATEGIES = {
+    "asia_nr7_runner": strat_asia_nr7_runner,
+    "sweep_sell_runner": strat_sweep_sell_runner,
     "squeeze_runner": strat_squeeze_runner,
     "sell_rally_scalp": strat_sell_rally_scalp,
     "trend_breakout": strat_trend_breakout,
@@ -298,6 +344,8 @@ class Trade:
     reason: str = ""
     pnl: float = 0.0
     r_multiple: float = 0.0
+    partial_pnl: float = 0.0   # profit dari penutupan sebagian (partial TP)
+    partial_done: bool = False
 
 
 def run_backtest(df: pd.DataFrame, plan: pd.DataFrame, cfg: Config, start: int = 0, end: int | None = None):
@@ -312,6 +360,9 @@ def run_backtest(df: pd.DataFrame, plan: pd.DataFrame, cfg: Config, start: int =
     be_trig = plan["be_trigger"].to_numpy() if "be_trigger" in plan.columns else None
     be_plus = plan["be_plus"].to_numpy() if "be_plus" in plan.columns else None
     trail_start = plan["trail_start"].to_numpy() if "trail_start" in plan.columns else None
+    # Opsional: partial TP. Tutup `partial_frac` dari posisi di jarak `partial_tp` ($), lalu SL ke entry + be_plus
+    ptp = plan["partial_tp"].to_numpy() if "partial_tp" in plan.columns else None
+    pfrac = plan["partial_frac"].to_numpy() if "partial_frac" in plan.columns else None
     times = df.index
     half = cfg.spread / 2
 
@@ -326,6 +377,7 @@ def run_backtest(df: pd.DataFrame, plan: pd.DataFrame, cfg: Config, start: int =
         nonlocal equity, pos
         fill = price - pos.direction * half
         pnl = pos.direction * (fill - pos.entry_price) * pos.lots * OZ_PER_LOT - cfg.commission * pos.lots
+        pnl += pos.partial_pnl
         pos.exit_time, pos.exit_price, pos.reason = times[i], fill, reason
         pos.pnl, pos.r_multiple = pnl, pnl / pos.risk_usd
         equity += pnl
@@ -361,6 +413,20 @@ def run_backtest(df: pd.DataFrame, plan: pd.DataFrame, cfg: Config, start: int =
                 gap = (o[i] > pos.tp_price) if d == 1 else (o[i] < pos.tp_price)
                 close(i, o[i] if gap else pos.tp_price, "TP")
 
+        # 2a) Partial TP: sebagian posisi ditutup saat harga menyentuh target, SL sisa ke breakeven-plus
+        if pos is not None and ptp is not None and not pos.partial_done and not np.isnan(ptp[i]):
+            d = pos.direction
+            target = pos.entry_price + d * ptp[i]
+            if (h[i] >= target) if d == 1 else (l[i] <= target):
+                frac = 0.5 if pfrac is None or np.isnan(pfrac[i]) else pfrac[i]
+                fill = target - d * half
+                pos.partial_pnl += d * (fill - pos.entry_price) * pos.lots * frac * OZ_PER_LOT
+                pos.lots *= (1 - frac)
+                pos.partial_done = True
+                plus = 0.0 if be_plus is None or np.isnan(be_plus[i]) else be_plus[i]
+                new_sl = pos.entry_price + d * plus
+                pos.sl_price = max(pos.sl_price, new_sl) if d == 1 else min(pos.sl_price, new_sl)
+
         # 2b) Trailing stop (chandelier): geser SL mengikuti close, berlaku mulai bar berikutnya
         if pos is not None:
             d = pos.direction
@@ -380,7 +446,7 @@ def run_backtest(df: pd.DataFrame, plan: pd.DataFrame, cfg: Config, start: int =
         elif entry_sig[i] != 0 and i + 1 < end:
             pending_entry, pending_sl, pending_tp = int(entry_sig[i]), sl_d[i], tp_d[i]
 
-        open_pnl = 0.0 if pos is None else pos.direction * (c[i] - pos.entry_price) * pos.lots * OZ_PER_LOT
+        open_pnl = 0.0 if pos is None else pos.partial_pnl + pos.direction * (c[i] - pos.entry_price) * pos.lots * OZ_PER_LOT
         curve[i - start] = equity + open_pnl
 
     if pos is not None:  # tutup posisi yang masih terbuka di akhir data

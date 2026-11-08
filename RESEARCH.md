@@ -176,3 +176,63 @@ Yang stabil di grid: breakeven 1–2×SL dan trailing 3–5×SL semuanya positif
 - Dua bulan data, keduanya di fase emas sangat volatil. Di pasar tenang, breakout squeeze lebih sering gagal.
 - Trailing dihitung di close candle, bukan tick. Di MT5 implementasi tick-by-tick akan sedikit berbeda.
 - Pakai risiko 0,5% kalau drawdown −20% terasa terlalu dalam.
+
+---
+
+# Riset entry untuk SL $3 tetap: entry baru, filter struktur, partial TP
+
+Masukan: "entry-nya yang salah, kembangkan, kombinasikan". Data sama (Yahoo `GC=F` M5/M15, 8 Sep – 6 Nov 2026).
+
+## Yang dikembangkan
+
+- **8 entry baru** yang dirancang untuk SL ketat (`entry_scan.py`): liquidity sweep, pullback EMA20, retest setelah breakout, engulfing di pullback, NR7 breakout, inside-bar breakout, momentum ignition, pin bar di EMA20. Plus Bollinger squeeze.
+- **Filter**: bias multi-timeframe (M15/H1/D1 tanpa look-ahead), filter struktur (SL harus di balik swing 5 candle), filter volatilitas (ATR ≤ batas), sesi (Asia/London/NY), arah.
+- **Exit bertahap** (`partial_scan.py`, fitur baru di mesin): tutup 50–70% posisi di +1R/1,5R/2R, SL sisa ke plus, sisanya trailing jauh.
+- Total diuji: 23.040 (entry, SL $3) + 23.040 ($10) + 23.040 ($30) + 46.656 (partial) = **115.776 kombinasi**.
+
+## Dua ukuran robustness
+
+1. **Ketat**: profit tanpa 3 trade terbaik di masing-masing bulan → **0 kombinasi** lolos di semua scan. Untuk strategi "biarkan profit berjalan" dengan ~25–50 trade/bulan, membuang 3 trade terbaik = membuang 10% trade terbaik, hampir selalu mematikan hasil. Ukuran ini terlalu ketat untuk aturan ini.
+2. **Wajar** (`robust_check.py`): profit tanpa **1** trade terbaik di tiap bulan, ≥ 6 dari 9 minggu profit, PF ≥ 1,2 di tiap bulan → **29 dari 691** kandidat lolos.
+
+## Dua strategi final (M15, saling melengkapi)
+
+### `asia_nr7_runner`
+```
+Entry : candle sebelumnya NR7 (range tersempit 7 candle), close menembus high-nya = BUY, low-nya = SELL
+Filter: hanya sesi Asia 00–07 UTC (07:00–14:00 WIB), searah tren H1 (EMA20 vs EMA50)
+Exit  : SL $3 tetap, trailing $9 dari close M15, tanpa TP
+```
+| Periode | Trade | Win | Exp. | PF | Return | DD | Kalah beruntun |
+|---|---|---|---|---|---|---|---|
+| 8 Sep – 6 Okt | 25 | 24% | +1,45R | 2,73 | +39,3% | −7,9% | 6 |
+| 7 Okt – 6 Nov | 23 | 30% | +0,56R | 1,72 | +12,6% | −11,9% | 5 |
+| 2 bulan | 48 | 27% | +1,02R | 2,21 | +56,9% | −11,9% | 6 |
+
+Ketahanan: trailing $6/9/12/15 semua positif; bias H1 ≈ D1; **sesi adalah kuncinya**: London −25%, NY −32%, semua sesi −22%. Catatan jujur: ATR M15 sesi Asia ($7,7) tidak lebih kecil dari London ($7,5), jadi keunggulan Asia **bukan** karena pasar lebih tenang. Ini pola empiris 2 bulan yang belum punya penjelasan kuat, dan bisa hilang saat rezim berubah.
+
+### `sweep_sell_runner`
+```
+Entry : high menembus high tertinggi 20 candle, tapi close kembali di bawahnya dengan candle bearish = SELL
+Filter: hanya saat tren H1 turun (EMA20 < EMA50). Sisi buy tidak dipakai: sweep buy −35% di periode ini
+Exit  : SL $3 tetap, trailing $9, tanpa TP
+```
+| Periode | Trade | Win | Exp. | PF | Return | DD | Kalah beruntun |
+|---|---|---|---|---|---|---|---|
+| 8 Sep – 6 Okt | 34 | 29% | +0,42R | 1,56 | +14,1% | −8,3% | 4 |
+| 7 Okt – 6 Nov | 28 | 36% | +0,81R | 2,13 | +23,9% | −7,9% | 5 |
+| 2 bulan | 62 | 32% | +0,60R | 1,83 | +41,4% | −8,3% | 5 |
+
+Ketahanan: trailing $6–15 semua positif, breakeven opsional (hasil mirip). Sensitif spread: $0,8 → +19%.
+
+### Gabungan (risiko 1% per strategi)
+Korelasi mingguan A vs B = **−0,55**. Gabungan 2 bulan: **+98%, DD −7,7%, 9 dari 9 minggu profit** (mingguan: +$54, +1.525, +1.983, +1.486, +916, +1.153, +478, +532, +1.698 per $10.000).
+
+Kandidat ketiga (NR7 M5 long + partial 50% di 1R, win rate 55%, +31%) rapuh terhadap spread dan filter volatilitas, jadi tidak dijadikan final.
+
+## Peringatan
+- Dipilih dari ~116.000 kombinasi di 2 bulan data. Walaupun sudah disaring dengan konsistensi mingguan dan ketahanan parameter, **bias seleksi tetap besar**. Hasil live hampir pasti lebih rendah.
+- Keduanya cenderung sell dan hidup di rezim emas turun (Sep–Nov 2026). Bias H1 otomatis mematikan sinyal saat tren berbalik, tapi belum teruji di rezim naik.
+- Win rate 27–32%: 2 dari 3 trade kena SL. Kalah beruntun 5–6 kali itu normal.
+- SL $3 = 30 pips dengan 1 pip = $0,10. Slippage $0,50 saat berita = 17% dari SL; jangan entry di sekitar berita besar.
+- Uji demo minimal 1 bulan; mulai risiko 0,5%.
