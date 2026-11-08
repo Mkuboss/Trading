@@ -195,3 +195,16 @@ def test_breakeven_plus_cannot_exceed_current_price():
     plan["be_trigger"], plan["be_plus"] = 0.5, 1.0
     trades, _ = bt.run_backtest(df, plan, CFG)
     assert trades[0].exit_price == 2000.5
+
+
+def test_macd_asia_m1_rules():
+    idx = pd.date_range("2025-01-06", periods=20000, freq="min")
+    idx = idx[idx.dayofweek < 5]
+    rng = np.random.default_rng(3)
+    close = 2000 + np.cumsum(rng.normal(0, 0.4, len(idx)))
+    df = pd.DataFrame({"open": close, "high": close + 0.3, "low": close - 0.3, "close": close}, index=idx)
+    plan = bt.strat_macd_asia_m1(df)
+    hours = plan.index[plan["entry"] != 0].hour
+    assert len(hours) > 0 and (hours < 7).all()
+    assert (plan["sl"] == 3.0).all() and plan["tp"].isna().all()
+    assert (plan["be_trigger"] == 0.5).all() and (plan["be_plus"] == 1.0).all() and (plan["trail"] == 4.5).all()

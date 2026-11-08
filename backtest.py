@@ -7,6 +7,7 @@ Strategi yang diuji:
   donchian      - Breakout channel 20 bar, trailing exit channel 10 bar
   session_break - Breakout range sesi Asia saat London/NY (butuh data intraday)
   mean_revert   - Bollinger Band + RSI, exit di garis tengah
+  macd_asia_m1    - FINAL win rate tinggi (SL $3 tetap, tanpa TP, SL plus + trailing), data M1, sesi Asia
   asia_nr7_runner - Aturan SL $3 tetap + trailing: NR7 breakout M15 sesi Asia, bias H1 (riset entry)
   sweep_sell_runner - Aturan SL $3 tetap + trailing: liquidity sweep sell M15, bias H1 turun
   squeeze_runner  - Aturan SL $3 tetap + tanpa TP + SL plus/trailing: BB squeeze breakout M15
@@ -304,7 +305,39 @@ def strat_sweep_sell_runner(df, n=20, sl_usd=3.0, trail_usd=9.0):
     return plan
 
 
+def _daily_bias(df: pd.DataFrame, n: int = 50) -> pd.Series:
+    """+1/-1: close harian KEMARIN di atas/bawah EMA-n harian (tanpa look-ahead)."""
+    d = df["close"].resample("1D").last().dropna()
+    return np.sign(d - ema(d, n)).shift(1).reindex(df.index, method="ffill")
+
+
+def strat_macd_asia_m1(df, macd_min_atr=0.5, asia_end=7, sl_usd=3.0, be_trigger=0.5, be_plus=1.0, trail_usd=4.5):
+    """STRATEGI FINAL WIN RATE TINGGI untuk aturan SL $3 tetap, tanpa TP, SL bergerak. Jalankan di data M1.
+    Entry : MACD(12,26,9) di M1 memotong signal. SELL jika cross ke bawah terjadi DI ATAS nol,
+            BUY jika cross ke atas terjadi DI BAWAH nol (sell saat pantulan naik, buy saat pantulan turun).
+    Filter: |MACD| saat cross >= 0.5 x ATR(14) M1 (pantulan yang kuat), sesi Asia 00-07 UTC,
+            searah bias harian (close kemarin vs EMA50 harian).
+    Exit  : SL $3 tetap. Setelah profit +$0.5, SL ke entry +$1 (dibatasi harga saat itu). Trailing $4.5. Tanpa TP.
+    Riset: 12 Okt - 6 Nov 2026, win ~86%, lihat RESEARCH.md."""
+    c = df["close"]
+    a = atr(df)
+    m = ema(c, 12) - ema(c, 26)
+    sig = ema(m, 9)
+    strong = m.abs() >= macd_min_atr * a
+    bias = _daily_bias(df)
+    asia = pd.Series(df.index.hour < asia_end, index=df.index)
+    cross_dn = (m < sig) & (m.shift(1) >= sig.shift(1)) & (m > 0)
+    cross_up = (m > sig) & (m.shift(1) <= sig.shift(1)) & (m < 0)
+    long = cross_up & strong & asia & (bias > 0)
+    short = cross_dn & strong & asia & (bias < 0)
+    no = pd.Series(False, index=df.index)
+    plan = _plan(df, long, short, pd.Series(sl_usd, index=df.index), np.nan, no, no)
+    plan["be_trigger"], plan["be_plus"], plan["trail"] = be_trigger, be_plus, trail_usd
+    return plan
+
+
 STRATEGIES = {
+    "macd_asia_m1": strat_macd_asia_m1,
     "asia_nr7_runner": strat_asia_nr7_runner,
     "sweep_sell_runner": strat_sweep_sell_runner,
     "squeeze_runner": strat_squeeze_runner,

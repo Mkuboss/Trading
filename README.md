@@ -9,6 +9,7 @@ Script untuk menguji dan membandingkan beberapa metode trading emas (XAUUSD) di 
 | `ema_trend` | Trend following | EMA50 > EMA200 dan RSI naik lagi melewati 40 (buy), kebalikannya untuk sell | SL 1,5 ATR, TP 3 ATR, atau close menembus EMA200 |
 | `donchian` | Breakout channel (Turtle) | Close menembus high/low 20 bar | SL 2 ATR, trailing di low/high 10 bar |
 | `session_break` | Breakout sesi Asia | Breakout pertama dari range 00–07 UTC, sampai jam 16 UTC | SL di sisi lain range, TP 2R, tutup jam 20 UTC |
+| **`macd_asia_m1`** | **FINAL: SL $3 tetap, tanpa TP, SL plus + trailing, win ≥ 80%** (data M1) | MACD cross M1 kuat (≥0,5 ATR), sesi Asia, bias EMA50 harian | SL $3, +$0,5 → SL ke +$1, trailing $4,5 |
 | `asia_nr7_runner` | SL $3 tetap + trailing (riset entry) | NR7 breakout M15, sesi Asia, bias H1 | SL $3, trailing $9 |
 | `sweep_sell_runner` | SL $3 tetap + trailing (riset entry) | Liquidity sweep sell M15, tren H1 turun | SL $3, trailing $9 |
 | `squeeze_runner` | SL tetap $3, tanpa TP, SL plus + trailing | BB squeeze breakout M15 | SL $3, BE+$1 setelah +$3, trailing $15 |

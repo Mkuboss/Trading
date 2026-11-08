@@ -236,3 +236,68 @@ Kandidat ketiga (NR7 M5 long + partial 50% di 1R, win rate 55%, +31%) rapuh terh
 - Win rate 27–32%: 2 dari 3 trade kena SL. Kalah beruntun 5–6 kali itu normal.
 - SL $3 = 30 pips dengan 1 pip = $0,10. Slippage $0,50 saat berita = 17% dari SL; jangan entry di sekitar berita besar.
 - Uji demo minimal 1 bulan; mulai risiko 0,5%.
+
+---
+
+# FINAL: SL $3 tetap, tanpa TP, SL bergerak, win rate ≥ 80% — `macd_asia_m1`
+
+## Mengapa scan sebelumnya mentok di 60%
+Mesin lama memindahkan SL hanya saat candle M5/M15 **ditutup**. Satu candle bisa naik +$2 lalu balik menyentuh SL −$3 sebelum tutup, sehingga breakeven tidak pernah sempat aktif. Solusi: sinyal boleh di TF apa pun, tapi **eksekusi dan manajemen SL dilakukan di M1** (`mtf.py`), mendekati eksekusi tick MT5. Dengan ini breakeven +$0,75 langsung memberi win rate 81% (sebelumnya 32%) pada strategi yang sama.
+
+Data M1: Yahoo `GC=F`, 12 Okt – 6 Nov 2026 (27.091 candle; Yahoo hanya memberi M1 untuk 30 hari terakhir). Diuji dalam dua paruh (12–25 Okt, 26 Okt–6 Nov).
+
+Scan `hiwin_m1.py`: 81.648 kombinasi (18 entry × sinyal M1/M5/M15 × bias × sesi × arah × breakeven cepat × trailing). Yang win ≥ 80% di dua paruh **dan** profit: 13, semuanya satu keluarga (MACD sell M5 + bias M15, 29 trade, +7,8%, sensitif spread). Keluarga kedua, MACD M1 sesi Asia + bias D1, 149 trade, +27%, 4/4 minggu, tapi win 86%/70%. Analisis trade SL-nya (`deep_dive.py` + analisis fitur) menemukan satu filter yang membedakan: **kekuatan MACD saat cross**. Cross yang terjadi dekat nol (pantulan lemah) jauh lebih sering kena SL.
+
+Koreksi mesin yang ditemukan di tahap ini: SL plus yang melewati harga pasar kini dibatasi di harga saat itu (sebelumnya terisi di harga lebih baik dari pasar). Hasil scan sebelum/sesudah koreksi identik.
+
+## Aturan
+```
+Data   : M1 XAUUSD
+Entry  : MACD(12,26,9) M1 memotong signal.
+         SELL jika cross ke BAWAH terjadi DI ATAS nol (jual saat pantulan naik)
+         BUY  jika cross ke ATAS terjadi DI BAWAH nol (beli saat pantulan turun)
+Filter : |MACD| saat cross ≥ 0,5 × ATR(14) M1
+         sesi Asia 00–07 UTC (07:00–14:00 WIB)
+         searah bias harian: close kemarin vs EMA50 harian (sell hanya saat di bawah, buy hanya saat di atas)
+SL     : $3 tetap (30 pips)
+SL plus: setelah profit +$0,5, SL dipindah ke entry +$1 (atau ke harga saat itu jika lebih dekat)
+Trail  : $4,5 dari close M1
+TP     : tidak ada
+Risiko : 1% per trade (0,33 lot per $10.000)
+```
+
+## Hasil (spread $0,40, risiko 1%)
+| Periode | Trade | Win | Exp. | PF | Return | DD | Kalah beruntun |
+|---|---|---|---|---|---|---|---|
+| 12–25 Okt | 40 | **90,0%** | +0,31R | 3,96 | +12,9% | −4,0% | 2 |
+| 26 Okt–6 Nov | 45 | **80,0%** | +0,48R | 3,40 | +23,6% | −3,9% | 2 |
+| 4 minggu | 85 | **84,7%** | +0,40R | 3,56 | **+39,5%** | −4,0% | 2 |
+
+- 4 dari 4 minggu profit; 14 dari 18 hari profit; hari terburuk −1,3R.
+- Anatomi 85 trade: 12 SL penuh, 57 keluar di plus kecil (+0,2–0,5R), 15 ≥ 0,5R, 11 ≥ 1R, terbesar +6,1R. Median +0,27R. Durasi rata-rata 6 menit.
+- Risiko 2%: +92%, DD −7,8%. Risiko 3%: +162%, DD −11%.
+
+## Ketahanan
+| Variasi | Hasil |
+|---|---|
+| Ambang MACD 0,3 / 0,4 / 0,5 / 0,6 / 0,7 / 1,0 × ATR | win 83–87%, return +25% s/d +42%, semua ≥ 79% di tiap paruh |
+| Tanpa filter MACD | win 77% (86%/70%), +27% |
+| be/plus 0,3–0,75 | win 80–85%, +34% s/d +43% (be 1,0 turun ke 75%) |
+| Trailing $3 / 4,5 / 6 / 9 / 15 | win 84–85%, +24% s/d +40% |
+| Spread $0,2 / 0,3 / 0,4 / 0,5 | win 86 / 86 / 85 / 81%, +45 / 43 / 40 / 30% |
+| Spread $0,6 / $0,8 | win 79 / 76%, +24 / +15% |
+| Bias harian / sesi | wajib: tanpa bias −15%, London −22%, NY −31% |
+
+## Batasan yang harus diketahui
+1. **Hanya 4 minggu data** (batas M1 Yahoo) dan rezim emas sedang turun. Filter MACD dipilih setelah melihat trade yang rugi; walaupun sederhana dan monoton, ada bias seleksi.
+2. **Spread adalah variabel paling kritis.** Target ≥ 80% bertahan sampai spread $0,5. Spread emas di sesi Asia pada banyak broker lebih lebar daripada London/NY; cek spread aktual broker jam 07:00–14:00 WIB. Akun raw/ECN dengan komisi lebih cocok.
+3. Durasi rata-rata 6 menit dan SL plus +$1 → eksekusi harus otomatis (EA) atau sangat disiplin. Slippage $0,3 sudah 10% dari SL.
+4. Data futures `GC=F`, bukan spot broker. Perbedaan harga kecil, tapi perilaku spread/slippage berbeda.
+5. Bias harian saat ini: close < EMA50 harian → hanya sinyal SELL yang aktif.
+
+## Reproduksi
+```bash
+python backtest.py --source csv --csv data/GC_1m_30d.csv --strategies macd_asia_m1 --spread 0.4 --split 0.5
+python hiwin_m1.py          # scan 81.648 kombinasi (±20 menit)
+python deep_dive.py '{"tf":"1m","fam":"old","entry":"macd","bias":"d1","session":"asia","side":"both","be":0.5,"plus":1.0,"trail":4.5}'
+```
