@@ -546,3 +546,35 @@ Kriteria lolos (spread $0,30, slippage $0,10): tiap periode holdout ≥ 20 trade
 Varian SL $9 dilaporkan untuk informasi (kriteria sama + win ≥ 78% tiap periode, ≥ 80% gabungan). Lolosnya varian ini tidak mengubah fakta risikonya 2× aturan 45 pips.
 
 **Status: belum ada strategi yang lolos. Tidak ada yang disarankan dipakai.** Kalau `port6` lolos holdout ke-2, yang terbukti adalah "profit konsisten dengan win ≈ 70%", bukan "win ≥ 80%"; keputusan menerima itu ada di pemilik akun.
+
+### Hasil holdout ke-2 (9 Nov 2026, setelah unduhan selesai): **GAGAL**
+
+`python holdout2.py` (parameter beku, spread $0,30 + slippage $0,10, risiko 1%):
+
+| Periode | Status | n | Win | expR | PF | Return | DD | Stres biaya ($0,40/$0,20) |
+|---|---|---|---|---|---|---|---|---|
+| 6 periode seleksi | riset | 763 | 72,1% | +0,16 | 1,55 | +1 … +32% (semua profit) | | |
+| **Sep 2025** | **holdout** | 144 | 79,2% | −0,01 | 0,92 | **−2,6%** | −15,4% | −6,9% |
+| **Feb 2026** | **holdout** | 128 | 67,2% | −0,18 | 0,47 | **−20,7%** | −24,1% | −25,9% |
+| **Apr 2026** | **holdout** | 140 | 63,6% | −0,25 | 0,38 | **−29,8%** | −37,9% | −36,0% |
+| Gabungan 9 periode | | 1.175 | 71,4% | +0,05 | 1,18 | | | 19/41 minggu profit |
+
+Varian SL $9: win 83–88% di holdout **dan tetap rugi 3/3** (−1,9%, −5,7%, −17,3%). Konfirmasi final: win rate tinggi tidak melindungi apa pun.
+
+Seberapa parah bias seleksinya? Semua **29 kombinasi** tahap 2 yang profit di 6/6 periode seleksi diuji di 3 bulan holdout (`results/stage2_6per_sl4.5.csv` → Feb/Apr 2026, Sep 2025):
+
+| Profit di holdout | Jumlah kombinasi |
+|---|---|
+| 3/3 periode | 1 (expR +0,04 ≈ nol) |
+| 2/3 | 1 |
+| 1/3 | 4 |
+| **0/3** | **23** |
+
+expR holdout rata-rata **−0,16R**, lebih buruk dari entry acak (−0,10R). "Profit di 6 dari 6 periode" ternyata murni hasil memilih dari ruang pencarian besar (≈ 8.800 kombinasi), bukan edge.
+
+## 6. Kesimpulan akhir riset (jujur)
+
+1. **Target "win ≥ 80% + SL 45 pips tetap + profit konsisten" tidak tercapai**, dan bukti dari 9 periode (≈ 250 ribu bar M1, 9 rezim berbeda, 2 uji holdout pra-registrasi) menunjukkan ia tidak akan tercapai dengan kerangka ini (entry teknikal M1/M5/M15 + SL dolar tetap + BE cepat + trailing). Win rate dalam kerangka ini adalah fungsi rasio SL : pemicu BE (entry acak di SL $9 → 82%), bukan ukuran kualitas.
+2. **Dua kandidat yang tampak robust di dalam sampel gagal di data baru**: `asia_nr7_engulf` (3 periode seleksi → rugi 2/3 holdout) dan `port6` (6 periode seleksi → rugi 3/3 holdout). Menambah periode seleksi dari 3 ke 6 tidak menolong; 23 dari 29 kombinasi "6/6" rugi di semua bulan holdout.
+3. **Tidak ada strategi di repo ini yang lolos. Tidak ada yang disarankan dipakai**, termasuk EA `mql5/AsiaNR7Engulf.mq5`.
+4. Yang masih mungkin diteliti, tapi di luar aturan yang diminta: SL berbasis volatilitas (ATR) alih-alih dolar tetap, atau timeframe lebih tinggi dengan trade lebih sedikit dan target win rate realistis (50–60%). Itu riset berbeda, bukan penyempurnaan dari yang sekarang.
