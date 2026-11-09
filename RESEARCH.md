@@ -457,3 +457,36 @@ Kriteria lolos (`holdout.py`, spread $0,30, slippage $0,10):
 - gabungan 6 periode: win ≥ 80%, PF ≥ 1,5, ≥ 60% minggu profit.
 
 Kalau gagal, strategi dinyatakan **tidak lolos** dan tidak disarankan dipakai; riset dilanjutkan atau dihentikan dengan laporan jujur.
+
+### Hasil holdout (9 Nov 2026, setelah unduhan selesai): **GAGAL**
+
+`python holdout.py` (parameter beku, spread $0,30 + slippage $0,10, risiko 1%):
+
+| Periode | Status | n | Win | expR | PF | Return | DD | Minggu profit |
+|---|---|---|---|---|---|---|---|---|
+| Jan 2026 | riset | 42 | 81,0% | +0,67 | 4,38 | +30,6% | −6,2% | 2/3 |
+| Agu–Okt 2026 | riset | 78 | 82,1% | +0,11 | 1,53 | +8,5% | −10,0% | 4/8 |
+| Okt–Nov 2026 | riset | 40 | 77,5% | +0,48 | 2,97 | +18,8% | −7,3% | 1/4 |
+| **Nov 2025** | **holdout** | 44 | 75,0% | +0,27 | 1,86 | +11,2% | −8,2% | 3/4 → lolos |
+| **Mar 2026** | **holdout** | 42 | 71,4% | −0,18 | 0,38 | **−7,5%** | −9,3% | 0/4 → gagal |
+| **Jun 2026** | **holdout** | 41 | 70,7% | −0,10 | 0,66 | **−4,3%** | −12,0% | 1/4 → gagal |
+| Gabungan 6 periode | | 287 | 77,0% | +0,20 | 1,81 | | | 11/27 (41%) → gagal |
+
+Alternatif NR7 bias D1: sama buruknya (Nov 2025 +8,6% tapi win 69,8%; Mar −7,7%; Jun −3,6%; gabungan win 75,6%).
+
+**Verdict: `asia_nr7_engulf` BELUM LOLOS. Tidak disarankan dipakai.** Status di README diturunkan dari FINAL menjadi GAGAL HOLDOUT.
+
+Anatomi trade per periode (kenapa gagal):
+
+| Periode | n | ΣR | Runner ≥2R (ΣR) | Menang kecil | SL penuh | ΣR rugi | Range harian median | Range Asia median |
+|---|---|---|---|---|---|---|---|---|
+| Jan 2026 | 42 | +28,3 | 4 (+33,3) | 30 | 8 | −8,4 | $92 | $57 |
+| Agu–Okt 2026 | 78 | +8,9 | 3 (+17,9) | 61 | 14 | −14,8 | $86 | $46 |
+| Okt–Nov 2026 | 40 | +19,2 | 2 (+25,5) | 29 | 9 | −9,5 | $62 | $42 |
+| Nov 2025 | 44 | +11,8 | 3 (+20,8) | 30 | 11 | −11,6 | $71 | $40 |
+| Mar 2026 | 42 | −7,8 | **0 (0,0)** | 30 | 12 | −12,7 | **$141** | **$81** |
+| Jun 2026 | 41 | −4,1 | 1 (+6,4) | 28 | 12 | −12,7 | $84 | $54 |
+
+Strukturnya identik di semua periode: ±30 menang kecil (+0,13R, hasil BE+0,6), 8–14 SL penuh (≈ −1R), dan **laba sepenuhnya datang dari 0–4 runner per bulan**. Menang kecil hanya menutup ±70% kerugian SL; sisanya harus ditutup runner. Tiga periode riset kebetulan periode dengan 2–4 runner; dua periode holdout hanya 0–1 runner. Jadi "win 82%" itu nyata tapi tidak berarti: win rate dikunci oleh rasio SL:BE, sedangkan profit adalah lotre jumlah runner. Mar 2026 juga menunjukkan bahaya SL dolar tetap saat volatilitas 2× (range Asia $81 vs $40–57): SL $4,5 jadi terlalu sempit, SL penuh naik, runner nihil.
+
+Kesimpulan metodologis: seleksi dari 3 periode tidak cukup. Riset dilanjutkan dengan **6 periode** sebagai data seleksi (≈165 ribu bar M1, 6 rezim) dan **holdout baru** yang sedang diunduh: Feb 2026, Apr 2026, Sep 2025. Kriteria holdout baru akan ditulis sebelum data itu dilihat.

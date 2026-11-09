@@ -18,8 +18,14 @@ import hiwin_scan as hs
 import mtf
 import research as rs
 
-PERIODS = {"jan": "data/duka_m1_jan26.csv", "augoct": "data/duka_m1_augoct26.csv",
-           "octnov": "data/duka_m1_octnov26.csv" if os.path.exists("data/duka_m1_octnov26.csv") else "data/GC_1m_30d.csv"}
+ALL_PERIODS = {"jan": "data/duka_m1_jan26.csv", "augoct": "data/duka_m1_augoct26.csv", "octnov": "data/duka_m1_octnov26.csv",
+               "nov25": "data/duka_m1_nov25.csv", "mar26": "data/duka_m1_mar26.csv", "jun26": "data/duka_m1_jun26.csv",
+               "feb26": "data/duka_m1_feb26.csv", "apr26": "data/duka_m1_apr26.csv", "sep25": "data/duka_m1_sep25.csv"}
+# PERIODS=jan,augoct,octnov (default 3 periode riset awal) | PERIODS=all6 -> 6 periode (3 riset + 3 bekas holdout)
+_sel = os.environ.get("PERIODS", "jan,augoct,octnov")
+_sel = ["jan", "augoct", "octnov", "nov25", "mar26", "jun26"] if _sel == "all6" else _sel.split(",")
+PERIODS = {k: ALL_PERIODS[k] for k in _sel}
+TAG = os.environ.get("TAG", "")
 SIG_TFS = {"1m": "1min", "5m": "5min", "15m": "15min"}
 SL_USD = float(os.environ.get("SL_USD", 3.0))
 BE_MODE = os.environ.get("BE_MODE", "m1close")   # m1close: pemicu BE di close M1 | tick: di high/low M1
@@ -108,7 +114,7 @@ if __name__ == "__main__":
         jobs = [(per, se, be, plus, trl, seed) for per in PERIODS for se in SESSION for be, plus, trl in MGMT for seed in range(5)]
         with mp.Pool(mp.cpu_count(), initializer=_init) as pool:
             B = pd.DataFrame(pool.map(bench, jobs))
-        B.to_csv(f"results/multi_bench_sl{SL_USD:g}_{BE_MODE}.csv", index=False)
+        B.to_csv(f"results/multi_bench_sl{SL_USD:g}_{BE_MODE}{TAG}.csv", index=False)
         with pd.option_context("display.width", 250, "display.float_format", "{:,.2f}".format):
             print(B.groupby(["be", "plus", "session", "per"])[["n", "win", "expR"]].mean().to_string())
         sys.exit()
@@ -116,7 +122,7 @@ if __name__ == "__main__":
     print(f"Menguji {len(ps):,} kombinasi x {len(PERIODS)} periode ...", flush=True)
     with mp.Pool(mp.cpu_count(), initializer=_init) as pool:
         R = pd.DataFrame([r for r in pool.imap_unordered(run, ps, chunksize=16) if r])
-    R.to_csv(f"results/multi_scan_sl{SL_USD:g}_{BE_MODE}.csv", index=False)
+    R.to_csv(f"results/multi_scan_sl{SL_USD:g}_{BE_MODE}{TAG}.csv", index=False)
     ok = R[R.min_n >= 10]
     hw = ok[(ok.min_win >= 75) & (ok.win >= 80)]
     tgt = hw[(hw.min_ret > 0) & (hw.weeks_profit >= 0.6 * hw.weeks)]

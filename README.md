@@ -9,7 +9,7 @@ Script untuk menguji dan membandingkan beberapa metode trading emas (XAUUSD) di 
 | `ema_trend` | Trend following | EMA50 > EMA200 dan RSI naik lagi melewati 40 (buy), kebalikannya untuk sell | SL 1,5 ATR, TP 3 ATR, atau close menembus EMA200 |
 | `donchian` | Breakout channel (Turtle) | Close menembus high/low 20 bar | SL 2 ATR, trailing di low/high 10 bar |
 | `session_break` | Breakout sesi Asia | Breakout pertama dari range 00–07 UTC, sampai jam 16 UTC | SL di sisi lain range, TP 2R, tutup jam 20 UTC |
-| **`asia_nr7_engulf`** | **FINAL: SL $4,5 (45 pips) tetap, tanpa TP, breakeven di close M1 + trailing, win 84% di 3 periode spot** (data M1) | NR7 breakout M15 + bias H1 (buy/sell) digabung engulfing bullish M5 di EMA20 + bias M15 (buy), sesi Asia 00–07 UTC | SL $4,5; close M1 ≥ +$0,75 → SL ke +$0,6; trailing $18 |
+| `asia_nr7_engulf` | **GAGAL HOLDOUT (9 Nov 2026)**: profit di 3 periode riset + Nov 2025, tapi rugi di Mar 2026 (−7,5%) dan Jun 2026 (−4,3%); win gabungan 6 periode 77%. Laba hanya dari 0–4 runner/bulan. Tidak disarankan dipakai; riset lanjut dengan 6 periode (lihat RESEARCH.md) | NR7 breakout M15 + bias H1 digabung engulfing bullish M5 + bias M15, sesi Asia 00–07 UTC | SL $4,5; close M1 ≥ +$0,75 → SL ke +$0,6; trailing $18 |
 | `macd_asia_m1` | ~~SL $3, win ≥ 80%~~ **GAGAL validasi independen** (win 64–67%, rugi di data spot Jan & Agu–Okt 2026) | MACD cross M1, sesi Asia, bias harian | SL $3, +$0,5 → SL +$1, trailing $4,5 |
 | `asia_nr7_runner` | SL $3 tetap + trailing (riset entry) | NR7 breakout M15, sesi Asia, bias H1 | SL $3, trailing $9 |
 | `sweep_sell_runner` | SL $3 tetap + trailing (riset entry) | Liquidity sweep sell M15, tren H1 turun | SL $3, trailing $9 |
@@ -86,10 +86,12 @@ Opsi penting:
 - Slippage saat berita, swap/biaya inap, dan spread yang melebar tidak dimodelkan, jadi hasil live biasanya lebih buruk.
 - GC=F adalah harga futures, sedikit berbeda dari spot XAUUSD di broker. Untuk hasil paling realistis, pakai CSV dari MT5 broker Anda.
 
-## Validasi strategi final
+## Validasi strategi
 ```bash
-python validate_final.py   # asia_nr7_engulf di 3 periode spot Dukascopy 2026 (butuh data/duka_m1_*.csv, lihat RESEARCH.md)
+python validate_final.py   # asia_nr7_engulf di 3 periode riset spot Dukascopy 2026 (butuh data/duka_m1_*.csv, lihat RESEARCH.md)
+python holdout.py          # uji holdout pra-registrasi di Nov 2025, Mar 2026, Jun 2026 -> hasil: GAGAL (lihat RESEARCH.md)
 ```
+Status saat ini: **belum ada strategi yang lolos holdout**. Jangan pakai EA di `mql5/` sebelum RESEARCH.md menyatakan lolos.
 
 ## Test
 

@@ -1,6 +1,8 @@
 # EA `AsiaNR7Engulf.mq5`
 
 Implementasi MQL5 dari strategi `asia_nr7_engulf` (`backtest.py`), hasil riset di `RESEARCH.md`.
+
+> **STATUS (9 Nov 2026): BELUM LOLOS.** Strategi ini gagal uji holdout (rugi di Mar 2026 dan Jun 2026, lihat RESEARCH.md). EA ini disimpan sebagai referensi implementasi, **jangan dipakai** di akun apa pun sampai RESEARCH.md menyatakan lolos.
 Belum dikompilasi di lingkungan riset (tidak ada MetaEditor di Linux); kompilasi di MetaEditor dulu, perbaiki
 peringatan kalau ada, lalu bandingkan hasil Strategy Tester dengan `validate_final.py` sebelum dipakai.
 
