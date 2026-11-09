@@ -596,3 +596,17 @@ Struktur partial TP **lebih buruk** dari BE sederhana (win 61–66%, expR −0,1
 Studi drift jam/hari (rata-rata perubahan harga per jam UTC per bulan, 9 bulan): tidak ada jam dengan drift konsisten (|t| < 2 di semua jam; jam 23 UTC positif 8/9 bulan tapi didominasi Jan 2026 dan bar tipis). Hari dalam minggu juga tidak konsisten. Tidak ada musiman intraday yang bisa dipakai.
 
 **Kesimpulan tambahan:** rata-rata expectancy seluruh ruang entry teknikal = biaya transaksi. Entry pola bar M1/M5/M15 di XAUUSD tidak punya edge yang bisa diukur di horizon ini; semua "strategi bagus" sebelumnya adalah noise yang terpilih. Arah yang tersisa harus mengubah salah satu premis: ukuran SL (interpretasi "pip"), atau timeframe swing dengan histori bertahun-tahun.
+
+## 8. Premis baru: SL $30–45 ("30–45 pips" kalau 1 pip = $1) di H1, data 2018–2026
+`python scan_h1.py` → `results/scan_h1.csv`. Dukascopy H1 spot, 51.729 bar (Jan 2018–Okt 2026; emas $1.280 → $4.300). 2.448 kombinasi: 17 entry × bias (none/H1/D1) × sesi (all/London/NY) × arah (both/long) × SL ($30/$45) × 4 struktur exit (BE pada 10/20/33% SL + trailing 3×SL, atau partial 50%). Biaya $0,40 per trade di sini hanya ≈1% dari risiko (vs 9% di SL $4,5).
+
+**Hasil mentah terlihat bagus**: 834 kombinasi cukup trade; 7 profit di 9/9 tahun, 55 di ≥ 8/9; yang teratas win 85–89%, PF 2,5–3,9, drawdown maksimum 3–7R. Contoh: supertrend bias D1 semua sesi buy&sell SL $45 (313 trade, win 89,5%, PF 3,07, 8/9 tahun); ema_pb bias D1 NY buy (200 trade, win 87,5%, PF 3,07, 9/9); NR7 bias H1 NY buy (200 trade, win 88,5%, PF 3,10, 9/9).
+
+**Tiga uji yang membongkarnya:**
+1. **Entry acak** dengan manajemen sama (12 seed): long-only SL $45 BE 10% → win **84%**, expR +0,15, profit 6,7 dari 9 tahun, 17–25% seed profit di ≥ 8/9 tahun. Dua arah → win 83%, expR +0,05. Win rate 80–89% itu mekanis (BE di 10% SL), bukan prestasi entry.
+2. **Walk-forward**: pilih kombinasi yang profit 4/4 tahun di 2023–2026 lalu uji di 2018–2022 → ΣR OOS rata-rata +10,4R (long) / +1,9R (both) vs **seluruh populasi** +10,1R / +2,7R. Seleksi tidak menambah apa pun di atas rata-rata populasi; rata-rata populasi positif karena emas naik.
+3. **Pisah buy/sell per tahun** untuk 5 kandidat dua-arah teratas: sisi sell ΣR 9 tahun antara −5R dan +13R (≈ nol; yang positif hanya dari 2026 saat emas turun). Sisi buy membawa semua laba, dan **2025–2026 menyumbang 55–75% ΣR**. Tahun 2018–2022 (5 tahun) kandidat terbaik hanya menghasilkan 4–17R total = 1–3R/tahun = 1–3%/tahun pada risiko 1%.
+
+Tetangga parameter supertrend D1 (SL 30/45/60 × BE 10/15/20% × trail 2/3/4×): 27/27 positif total, tapi semua dengan pola yang sama: 2018–22 kecil, 2023–26 besar. Ini sistem "long emas dengan trailing stop", bukan edge entry.
+
+**Kesimpulan §8:** di H1 dengan SL $45, target win ≥ 80% tercapai secara angka, tapi (a) angkanya mekanis dan dicapai juga oleh entry acak, (b) labanya adalah taruhan arah pada bull market emas 2023–2026, bukan edge yang bisa diandalkan di pasar datar/turun. Tiga kandidat dibekukan dan diuji di holdout 2015–2017 (`holdout_h1.py`, kriteria di docstring, termasuk syarat harus mengalahkan entry acak + 1 SD).
