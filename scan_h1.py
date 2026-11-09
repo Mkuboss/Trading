@@ -40,7 +40,9 @@ def run(p):
     plan["be_touch"] = False
     plan["partial_tp"], plan["partial_frac"] = ptp * p["sl"] if not np.isnan(ptp) else np.nan, 0.5
     t, c = bt.run_backtest(df, plan, CFG, 300, len(df))
-    R = pd.Series([x.r_multiple for x in t], index=[x.entry_time for x in t], dtype=float)
+    R = pd.Series([x.r_multiple for x in t], index=pd.DatetimeIndex([x.entry_time for x in t]), dtype=float)
+    if len(R) < 50:
+        return None
     out = dict(p)
     yr = R.groupby(R.index.year)
     n_y, sum_y, win_y = yr.size(), yr.sum(), yr.apply(lambda x: (x > 0).mean() * 100)
