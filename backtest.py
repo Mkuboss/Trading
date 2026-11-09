@@ -369,7 +369,39 @@ def strat_asia_nr7_engulf(df, sl_usd=4.5, be_trigger=0.75, be_plus=0.6, trail_us
     plan["be_trigger"], plan["be_plus"], plan["trail"], plan["be_touch"] = be_trigger, be_plus, trail_usd, be_mode == "tick"
     return plan
 
+
+def strat_port6(df, sl_usd=4.5, be_trigger=0.45, be_plus=0.45, trail_usd=13.5):
+    """Portofolio 3 entry hasil scan 6 periode (Nov 2025, Jan, Mar, Jun, Agu-Okt, Okt-Nov 2026), SL $ tetap, tanpa TP,
+    BE close M1 + trailing chandelier. Satu posisi dalam satu waktu; kalau sinyal bentrok, urutan di bawah yang menang.
+      1. engulfing bearish M1 di EMA20, bias M15 turun, sesi London 07-13 UTC, sell saja
+      2. Donchian-55 breakout M15, bias M15, sesi Asia 00-07 UTC, buy & sell
+      3. NR7 breakout M5, bias M15 naik, sesi New York 13-20 UTC, buy saja
+    Win rate ~72% di SL $4,5 (acak: 69%). Win rate naik mekanis kalau SL diperbesar (SL $9 -> 83%, acak 82%)."""
+    import entry_scan as es
+    import hiwin_scan as hs
+    import mtf
+    import research as rs
+    specs = [dict(tf="1min", fam="new", entry="engulf", bias="m15", session="ldn", side="short"),
+             dict(tf="15min", fam="old", entry="donch55", bias="m15", session="asia", side="both"),
+             dict(tf="5min", fam="new", entry="nr7", bias="m15", session="ny", side="long")]
+    old_sl, hs.SL_USD = hs.SL_USD, sl_usd
+    try:
+        plans = []
+        for sp in specs:
+            d = df if sp["tf"] == "1min" else mtf.resample(df, sp["tf"])
+            plan = hs.build({**sp, "be": be_trigger, "plus": be_plus, "trail": trail_usd, "ts": 0.0}, es.precompute(d), rs.precompute(d))
+            plans.append(plan if sp["tf"] == "1min" else mtf.to_m1(plan, df, sp["tf"]))
+    finally:
+        hs.SL_USD = old_sl
+    out = plans[0].copy()
+    for q in plans[1:]:
+        out["entry"] = np.where(out["entry"] != 0, out["entry"], q["entry"])
+    out["sl"], out["tp"], out["be_touch"] = sl_usd, np.nan, False
+    out["be_trigger"], out["be_plus"], out["trail"] = be_trigger, be_plus, trail_usd
+    return out
+
 STRATEGIES = {
+    "port6": strat_port6,
     "asia_nr7_engulf": strat_asia_nr7_engulf,
     "macd_asia_m1": strat_macd_asia_m1,
     "asia_nr7_runner": strat_asia_nr7_runner,
@@ -383,6 +415,7 @@ STRATEGIES = {
     "mean_revert": strat_mean_revert,
 }
 INTRADAY_ONLY = {"session_break"}
+
 
 
 # ---------------------------------------------------------------------------

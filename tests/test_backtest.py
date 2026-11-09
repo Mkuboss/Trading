@@ -265,3 +265,17 @@ def test_lock_frac_locks_fraction_of_max_profit():
     t, _ = bt.run_backtest(df, plan, bt.Config(spread=0.0), 0, len(df))
     assert len(t) == 1 and t[0].reason == "SL"
     assert t[0].exit_price == pytest.approx(105.0)   # 100 + 0.5 x 10
+
+
+def test_port6_rules():
+    """Entry hanya di sesi yang ditentukan per arah: sell London (07-13), buy NY (13-20) atau Asia (<7), sell Asia (<7)."""
+    idx = pd.date_range("2024-01-01", periods=3 * 1440, freq="1min")
+    rng = np.random.default_rng(0)
+    c = 2000 + np.cumsum(rng.normal(0, 0.5, len(idx)))
+    df = pd.DataFrame({"open": c, "high": c + 0.5, "low": c - 0.5, "close": c, "volume": 1}, index=idx)
+    plan = bt.strat_port6(df)
+    hr = plan.index.hour
+    assert (plan["sl"] == 4.5).all() and plan["tp"].isna().all() and not plan["be_touch"].any()
+    sells, buys = plan["entry"] == -1, plan["entry"] == 1
+    assert (((hr >= 7) & (hr < 13)) | (hr < 7))[sells].all()
+    assert (((hr >= 13) & (hr < 20)) | (hr < 7))[buys].all()

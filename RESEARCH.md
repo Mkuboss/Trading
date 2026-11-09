@@ -490,3 +490,59 @@ Anatomi trade per periode (kenapa gagal):
 Strukturnya identik di semua periode: ±30 menang kecil (+0,13R, hasil BE+0,6), 8–14 SL penuh (≈ −1R), dan **laba sepenuhnya datang dari 0–4 runner per bulan**. Menang kecil hanya menutup ±70% kerugian SL; sisanya harus ditutup runner. Tiga periode riset kebetulan periode dengan 2–4 runner; dua periode holdout hanya 0–1 runner. Jadi "win 82%" itu nyata tapi tidak berarti: win rate dikunci oleh rasio SL:BE, sedangkan profit adalah lotre jumlah runner. Mar 2026 juga menunjukkan bahaya SL dolar tetap saat volatilitas 2× (range Asia $81 vs $40–57): SL $4,5 jadi terlalu sempit, SL penuh naik, runner nihil.
 
 Kesimpulan metodologis: seleksi dari 3 periode tidak cukup. Riset dilanjutkan dengan **6 periode** sebagai data seleksi (≈165 ribu bar M1, 6 rezim) dan **holdout baru** yang sedang diunduh: Feb 2026, Apr 2026, Sep 2025. Kriteria holdout baru akan ditulis sebelum data itu dilihat.
+
+---
+
+# Riset 6 periode & kesimpulan tentang target win rate (9 Nov 2026)
+
+Setelah `asia_nr7_engulf` gagal holdout, seleksi diulang dengan **6 periode** sekaligus (Nov 2025, Jan, Mar, Jun, Agu–Okt, Okt–Nov 2026; ≈165 ribu bar M1 spot Dukascopy; spread $0,30, risiko 1%). Semua skrip: `PERIODS=all6 SL_USD=4.5 python multi_scan.py` → `results/multi_scan_sl4.5_m1close_6per.csv`, lalu `PERIODS=all6 SL_USD=4.5 python stage2_6per.py` → `results/stage2_6per_sl4.5.csv`.
+
+## 1. Scan 6.804 kombinasi entry × bias × sesi × arah × manajemen (SL $4,5)
+
+| Saringan | Jumlah |
+|---|---|
+| ≥ 10 trade di tiap periode | 3.716 |
+| win ≥ 75% tiap periode & ≥ 80% gabungan | 1 (dan rugi di 5/6 periode) |
+| profit di **6/6** periode | 5 — semuanya win 66–72% |
+| profit di ≥ 5/6 periode | 68 — **tidak satu pun win ≥ 75%** |
+| win ≥ 78% gabungan | hanya keluarga NR7 M15 Asia (profit di 3–4 dari 6 periode) |
+
+Benchmark entry acak (prob 1/90 per bar, 5 seed) dengan manajemen yang sama: win 55–67%, expR −0,1. Jadi entry yang profit 6/6 (engulfing M1 sell London, win 72%) memang punya edge, tapi edge-nya ada di expectancy (+0,16R vs −0,1R), bukan di win rate (+3–5 poin di atas acak).
+
+## 2. Tahap 2: grid manajemen untuk 9 entry terbaik + 6 portofolio (1.980 kombinasi)
+Pemicu BE 0,45–1,0; plus 0,3–0,6; trailing 9/13,5/18/tanpa; ratchet `lock_frac` ∅/0,5/0,7.
+- Tidak ada kombinasi dengan win ≥ 75% **di tiap periode** (min_win terbaik 68%).
+- 29 kombinasi profit 6/6; win tertinggi di antaranya 72,9%.
+- `lock_frac` (mengunci 50–70% profit maksimum) **merugikan**: expR rata-rata +0,03 vs +0,21 tanpa ratchet; memotong runner lebih banyak daripada menyelamatkan profit.
+- Pemicu BE lebih kecil menaikkan win rate (0,45 → 73,5%, 1,0 → 68,5%) tanpa mengubah expR (+0,08 di semua) — konfirmasi win rate itu tombol kosmetik.
+
+Portofolio paling robust: **`port6`** = engulfing bearish M1 London (sell, bias M15) + Donchian-55 M15 Asia (bias M15) + NR7 M5 New York (buy, bias M15); SL $4,5, BE close M1 +0,45 → +0,45, trailing $13,5. 763 trade, win 72,1%, expR +0,16, PF 1,55, profit di 6/6 periode (+32/+1/+12/+18/+27/+27%), 15/27 minggu profit, dan profit **tanpa 5 trade terbaik** masih +27R (bukan lotre runner seperti `asia_nr7_engulf`). Kelemahan: trailing $9 merusaknya (2/6 periode), Agu–Okt hanya +1%, dan sensitif biaya (lihat §4).
+
+## 3. Win rate adalah fungsi SL, bukan kualitas entry (tabel yang menentukan)
+`port6` dengan pemicu BE $0,45, trailing $13,5, hanya SL yang diubah, vs entry acak dengan manajemen identik:
+
+| SL | Win `port6` | Win **acak** | expR `port6` | expR acak | Periode profit |
+|---|---|---|---|---|---|
+| $4,5 (45 pips) | 72,1% | 69,4% | +0,16 | −0,11 | 6/6 |
+| $6 | 76,6% | 75,2% | +0,13 | −0,09 | 5/6 |
+| **$9 (90 pips)** | **83,1%** | **82,4%** | +0,10 | −0,05 | 5/6 |
+
+Entry acak di SL $9 juga "win 82%" dan tetap rugi. Jadi **target win ≥ 80% dengan SL 45 pips tidak tercapai dan tidak akan tercapai dengan struktur SL tetap + BE cepat**: win rate ditentukan rasio SL : pemicu BE, dan satu-satunya cara menaikkannya adalah memperbesar SL (= memperbesar risiko) atau memperkecil kunci BE (= menang yang makin tak bernilai). Memperbesar SL menurunkan expR per trade (0,16 → 0,10): tidak ada yang gratis.
+
+## 4. Sensitivitas biaya `port6` (SL $4,5)
+
+| Spread / slippage | Return per periode (Agu–Okt, Jan, Jun, Mar, Nov25, Okt–Nov) | Win | ΣR | Periode profit |
+|---|---|---|---|---|
+| $0,30 / $0,10 | +1 / +32 / +27 / +27 / +18 / +12% | 72% | +122 | 6/6 |
+| $0,40 / $0,20 | −16 / +26 / +21 / +23 / +11 / +5% | 68% | +77 | 5/6 |
+| $0,50 / $0,20 | −21 / +23 / +19 / +16 / +10 / +4% | 5–12% | +60 | 5/6 |
+| $0,60 / $0,30 | −30 / +17 / +12 / +10 / +3 / −6% | 5–12% | +15 | 4/6 |
+
+Kunci BE +$0,45 hanya menyisakan ≈ +$0,20 bersih setelah spread dan slippage; di spread ≥ $0,5 "menang kecil" jadi rugi kecil dan win rate runtuh ke 5–12% walau ΣR masih positif. Sekali lagi: angka win rate tidak mengukur apa pun yang ekonomis di sini.
+
+## 5. Pra-registrasi holdout ke-2 (`holdout2.py`, ditulis sebelum data dilihat)
+Kandidat beku: `port6` SL $4,5 (parameter di atas). Data holdout: Dukascopy M1 **Sep 2025, Feb 2026, Apr 2026** (sedang diunduh; belum pernah dipakai).
+Kriteria lolos (spread $0,30, slippage $0,10): tiap periode holdout ≥ 20 trade, profit, win ≥ 65%; gabungan 9 periode expR ≥ +0,10, PF ≥ 1,4, ≥ 55% minggu profit; stres biaya ($0,40/$0,20) ≥ 2 dari 3 periode holdout tetap profit.
+Varian SL $9 dilaporkan untuk informasi (kriteria sama + win ≥ 78% tiap periode, ≥ 80% gabungan). Lolosnya varian ini tidak mengubah fakta risikonya 2× aturan 45 pips.
+
+**Status: belum ada strategi yang lolos. Tidak ada yang disarankan dipakai.** Kalau `port6` lolos holdout ke-2, yang terbukti adalah "profit konsisten dengan win ≈ 70%", bukan "win ≥ 80%"; keputusan menerima itu ada di pemilik akun.
