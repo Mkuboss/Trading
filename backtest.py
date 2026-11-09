@@ -148,6 +148,7 @@ def atr(df: pd.DataFrame, n: int = 14) -> pd.Series:
 #   be_plus    : (opsional) jarak SL di atas entry setelah breakeven ($)
 #   partial_tp : (opsional) jarak target partial ($); saat tersentuh, partial_frac posisi ditutup, SL ke entry+be_plus
 #   partial_frac: (opsional) porsi yang ditutup di partial (default 0.5)
+#   lock_frac  : (opsional) setelah be_trigger tercapai, SL dikunci di entry + lock_frac x profit maksimum (close), $
 # ---------------------------------------------------------------------------
 def _plan(df, long, short, sl, tp, exit_long, exit_short) -> pd.DataFrame:
     entry = long.fillna(False).astype(int) - short.fillna(False).astype(int)
@@ -413,6 +414,7 @@ class Trade:
     r_multiple: float = 0.0
     partial_pnl: float = 0.0   # profit dari penutupan sebagian (partial TP)
     partial_done: bool = False
+    mfe: float = 0.0           # profit maksimum (dari close) selama posisi, $
 
 
 def run_backtest(df: pd.DataFrame, plan: pd.DataFrame, cfg: Config, start: int = 0, end: int | None = None):
@@ -433,6 +435,8 @@ def run_backtest(df: pd.DataFrame, plan: pd.DataFrame, cfg: Config, start: int =
     # Opsional: be_touch=True -> pemicu breakeven dicek di high/low bar (seperti EA tick), bukan hanya di close.
     # Konservatif: kalau di bar yang sama harga juga sudah kembali ke SL baru, posisi dianggap tertutup di SL baru.
     be_touch = plan["be_touch"].to_numpy() if "be_touch" in plan.columns else None
+    # Opsional: lock_frac -> SL mengunci lock_frac x profit maksimum (diukur dari close), aktif setelah be_trigger tercapai.
+    lock_frac = plan["lock_frac"].to_numpy() if "lock_frac" in plan.columns else None
     times = df.index
     half = cfg.spread / 2
 
@@ -515,10 +519,15 @@ def run_backtest(df: pd.DataFrame, plan: pd.DataFrame, cfg: Config, start: int =
             d = pos.direction
             profit = d * (c[i] - pos.entry_price)
             cands = []
+            pos.mfe = max(pos.mfe, profit)
             if be_trig is not None and not np.isnan(be_trig[i]) and profit >= be_trig[i]:
                 plus = 0.0 if be_plus is None or np.isnan(be_plus[i]) else be_plus[i]
                 # SL plus tidak boleh melewati harga sekarang (stop di atas pasar = eksekusi di pasar)
                 cands.append(min(pos.entry_price + d * plus, c[i]) if d == 1 else max(pos.entry_price + d * plus, c[i]))
+            if lock_frac is not None and not np.isnan(lock_frac[i]) and be_trig is not None and not np.isnan(be_trig[i]) \
+                    and pos.mfe >= be_trig[i]:
+                lock = pos.entry_price + d * lock_frac[i] * pos.mfe
+                cands.append(min(lock, c[i]) if d == 1 else max(lock, c[i]))
             if trail is not None and not np.isnan(trail[i]) and \
                     (trail_start is None or np.isnan(trail_start[i]) or profit >= trail_start[i]):
                 cands.append(c[i] - d * trail[i])

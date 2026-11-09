@@ -253,3 +253,15 @@ def test_slippage_worsens_entry_and_sl_fills():
     assert t1[0].entry_price == t0[0].entry_price + 0.2        # beli lebih mahal
     assert t1[0].reason == "SL" and t1[0].exit_price == t1[0].sl_price - 0.2   # SL terisi lebih buruk
     assert t1[0].pnl < t0[0].pnl
+
+
+def test_lock_frac_locks_fraction_of_max_profit():
+    """Long dari 100; close naik ke 110 (MFE 10) lalu turun. lock_frac 0.5 -> SL 105; ditutup di 105 saat low menembus."""
+    idx = pd.date_range("2024-01-01", periods=6, freq="1min")
+    df = pd.DataFrame({"open": [100, 100, 104, 108, 109, 103], "high": [100.5, 104, 108, 110, 109.5, 104],
+                       "low": [99.5, 100, 104, 108, 104.0, 100], "close": [100, 104, 108, 110, 104.5, 101]}, index=idx)
+    plan = pd.DataFrame({"entry": [1, 0, 0, 0, 0, 0], "sl": 5.0, "tp": np.nan, "exit_long": False, "exit_short": False,
+                         "be_trigger": 1.0, "be_plus": 0.5, "lock_frac": 0.5}, index=idx)
+    t, _ = bt.run_backtest(df, plan, bt.Config(spread=0.0), 0, len(df))
+    assert len(t) == 1 and t[0].reason == "SL"
+    assert t[0].exit_price == pytest.approx(105.0)   # 100 + 0.5 x 10
