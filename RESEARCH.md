@@ -610,3 +610,35 @@ Studi drift jam/hari (rata-rata perubahan harga per jam UTC per bulan, 9 bulan):
 Tetangga parameter supertrend D1 (SL 30/45/60 × BE 10/15/20% × trail 2/3/4×): 27/27 positif total, tapi semua dengan pola yang sama: 2018–22 kecil, 2023–26 besar. Ini sistem "long emas dengan trailing stop", bukan edge entry.
 
 **Kesimpulan §8:** di H1 dengan SL $45, target win ≥ 80% tercapai secara angka, tapi (a) angkanya mekanis dan dicapai juga oleh entry acak, (b) labanya adalah taruhan arah pada bull market emas 2023–2026, bukan edge yang bisa diandalkan di pasar datar/turun. Tiga kandidat dibekukan dan diuji di holdout 2015–2017 (`holdout_h1.py`, kriteria di docstring, termasuk syarat harus mengalahkan entry acak + 1 SD).
+
+### Hasil holdout H1 2015–2017 (9 Nov 2026): **GAGAL 3/3**
+
+`python holdout_h1.py` (16.319 bar H1, parameter beku, spread $0,30 + slippage $0,10):
+
+| Kandidat | n | Win | ΣR 2015 / 2016 / 2017 | ΣR total | Entry acak (12 seed) | Verdict |
+|---|---|---|---|---|---|---|
+| A supertrend D1, buy&sell | 88 | 79,5% | −3,3 / −4,2 / −4,9 | **−12,4** | −3,0 ± 4,9 | GAGAL (lebih buruk dari acak) |
+| B ema_pb D1 NY, buy | 38 | 86,8% | −2,9 / +2,7 / +0,7 | +0,6 | +1,1 ± 2,8 | GAGAL (= acak) |
+| C NR7 H1 NY, buy | 28 | 85,7% | −2,2 / +2,9 / −0,2 | +0,6 | +1,1 ± 3,2 | GAGAL (= acak) |
+
+Win rate tetap 80–87% (mekanis), laba nol atau negatif. Di luar bull market 2023–2026, sistem ini tidak menghasilkan apa-apa. Konfirmasi bahwa §8 adalah artefak tren emas.
+
+---
+
+# Kesimpulan keseluruhan riset (9 Nov 2026)
+
+Empat arah yang secara struktural berbeda sudah diuji, semuanya dengan holdout pra-registrasi atau benchmark acak:
+
+| Arah | Data | Hasil |
+|---|---|---|
+| Entry teknikal M1/M5/M15, SL $4,5, BE cepat + trailing | 9 bulan 2025–2026, 2 holdout | 2 kandidat lolos in-sample, keduanya rugi di holdout; 23/29 kombinasi "6/6" rugi di semua bulan baru |
+| SL $9 (win rate 83%) | 9 bulan | rugi 3/3 bulan holdout; entry acak juga win 82% |
+| Partial TP, filter volatilitas, ruang sempit 9 periode | 9 bulan | 0 kombinasi profit di 8/9 atau 9/9; expR rata-rata ruang = biaya |
+| SL $30–45 di H1 | 2018–2026 + holdout 2015–2017 | win 85–89% tapi = entry acak; laba hanya dari bull market; holdout 2015–17 gagal 3/3 |
+
+Yang terbukti secara konsisten:
+1. **Win rate dalam struktur "SL tetap + BE cepat + trailing" adalah fungsi rasio SL : pemicu BE**, dicapai sama baiknya oleh entry acak. Angka 80% bisa dibuat kapan saja; angka itu tidak mengandung informasi tentang profit.
+2. **Pola bar (NR7, engulfing, pin, Donchian, EMA pullback, MACD, supertrend, squeeze, sweep, dll.) tidak punya edge yang bisa diukur di XAUUSD** di horizon intraday maupun H1 setelah biaya. Setiap "strategi bagus" yang ditemukan adalah noise yang terpilih dari ruang pencarian besar.
+3. Laba yang ada hanya berasal dari **arah pasar** (bull market emas 2023–2026), bukan dari aturan.
+
+**Tidak ada strategi di repo ini yang disarankan dipakai.** Melanjutkan pencarian dengan aturan yang sama (SL dolar tetap kecil, target win rate) hanya akan menghasilkan kandidat palsu berikutnya. Arah yang masih masuk akal secara ilmiah harus mengubah targetnya: trend-following H4/D1 dengan SL berbasis ATR dan win rate realistis 40–55%, dievaluasi dengan profit factor dan drawdown, bukan win rate.

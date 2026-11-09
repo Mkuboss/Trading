@@ -92,8 +92,9 @@ Opsi penting:
 python validate_final.py   # asia_nr7_engulf di 3 periode riset spot Dukascopy 2026 (butuh data/duka_m1_*.csv, lihat RESEARCH.md)
 python holdout.py          # uji holdout ke-1 (asia_nr7_engulf) di Nov 2025, Mar 2026, Jun 2026 -> hasil: GAGAL
 python holdout2.py         # uji holdout ke-2 (port6) di Sep 2025, Feb 2026, Apr 2026 -> hasil: GAGAL
+python scan_h1.py && python holdout_h1.py   # premis SL $45 di H1 2018-2026, holdout 2015-2017 -> hasil: GAGAL
 ```
-Status akhir (9 Nov 2026): **tidak ada strategi yang lolos holdout**, dan target win ≥ 80% dengan SL 45 pips tetap terbukti tidak tercapai dalam kerangka ini (kesimpulan lengkap di RESEARCH.md §6). Jangan pakai EA di `mql5/`.
+Status akhir (9 Nov 2026): **tidak ada strategi yang lolos holdout** setelah 4 arah riset berbeda (SL $4,5 intraday, SL $9, partial TP/filter volatilitas, SL $45 di H1 2015–2026). Win rate ≥ 80% terbukti mekanis (entry acak juga mencapainya) dan tidak berkaitan dengan profit. Kesimpulan lengkap di RESEARCH.md (bagian "Kesimpulan keseluruhan riset"). Jangan pakai EA di `mql5/`.
 
 ## Test
 
