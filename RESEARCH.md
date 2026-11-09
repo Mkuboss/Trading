@@ -578,3 +578,21 @@ expR holdout rata-rata **−0,16R**, lebih buruk dari entry acak (−0,10R). "Pr
 2. **Dua kandidat yang tampak robust di dalam sampel gagal di data baru**: `asia_nr7_engulf` (3 periode seleksi → rugi 2/3 holdout) dan `port6` (6 periode seleksi → rugi 3/3 holdout). Menambah periode seleksi dari 3 ke 6 tidak menolong; 23 dari 29 kombinasi "6/6" rugi di semua bulan holdout.
 3. **Tidak ada strategi di repo ini yang lolos. Tidak ada yang disarankan dipakai**, termasuk EA `mql5/AsiaNR7Engulf.mq5`.
 4. Yang masih mungkin diteliti, tapi di luar aturan yang diminta: SL berbasis volatilitas (ATR) alih-alih dolar tetap, atau timeframe lebih tinggi dengan trade lebih sedikit dan target win rate realistis (50–60%). Itu riset berbeda, bukan penyempurnaan dari yang sekarang.
+
+## 7. Lanjutan setelah permintaan "jangan berhenti" (9 Nov 2026): scan 9 periode ruang sempit
+`PERIODS=all9 python scan9.py` → `results/scan9.csv`. Ruang pencarian sengaja kecil (3.042 kombinasi): 18 entry × 3 TF × 3 bias × 4 sesi, exit **dibekukan** ke 3 struktur (BE +0,45/trail 13,5; partial 50% di +$2,25 lalu SL +0,30; partial 50% di +$1,50 lalu SL +0,30), filter volatilitas on/off. 9 bulan: Sep 2025, Nov 2025, Jan, Feb, Mar, Apr, Jun, Agu–Okt, Okt–Nov 2026.
+
+| Hasil | |
+|---|---|
+| kombinasi dengan ≥ 8 trade tiap periode | 2.299 |
+| profit **9/9** periode | **0** |
+| profit 8/9 | **0** |
+| profit 7/9 | 9 (win 68–77%, min_win 33–58%) |
+| win ≥ 78% gabungan | 1 (NR7 H1 Asia, profit 6/9) |
+| expR rata-rata seluruh ruang | −0,10 (= entry acak) |
+
+Struktur partial TP **lebih buruk** dari BE sederhana (win 61–66%, expR −0,11). Filter volatilitas tidak menolong (expR −0,11 vs −0,10).
+
+Studi drift jam/hari (rata-rata perubahan harga per jam UTC per bulan, 9 bulan): tidak ada jam dengan drift konsisten (|t| < 2 di semua jam; jam 23 UTC positif 8/9 bulan tapi didominasi Jan 2026 dan bar tipis). Hari dalam minggu juga tidak konsisten. Tidak ada musiman intraday yang bisa dipakai.
+
+**Kesimpulan tambahan:** rata-rata expectancy seluruh ruang entry teknikal = biaya transaksi. Entry pola bar M1/M5/M15 di XAUUSD tidak punya edge yang bisa diukur di horizon ini; semua "strategi bagus" sebelumnya adalah noise yang terpilih. Arah yang tersisa harus mengubah salah satu premis: ukuran SL (interpretasi "pip"), atau timeframe swing dengan histori bertahun-tahun.
