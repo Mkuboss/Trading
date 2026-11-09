@@ -337,7 +337,7 @@ def strat_macd_asia_m1(df, macd_min_atr=0.5, asia_end=7, sl_usd=3.0, be_trigger=
 
 
 
-def strat_asia_nr7_engulf(df, sl_usd=4.5, be_trigger=0.75, be_plus=0.6, trail_usd=18.0, asia_end=7, be_mode="m1close"):
+def strat_asia_nr7_engulf(df, sl_usd=4.5, be_trigger=0.75, be_plus=0.6, trail_usd=18.0, asia_end=7, be_mode="m1close", nr7_bias="h1"):
     """Portofolio sesi Asia (00-07 UTC), WAJIB data M1. Dua entry digabung, satu posisi dalam satu waktu:
       1) NR7 breakout M15: bar sebelumnya range tersempit dari 7 bar, close menembus high/low-nya; arah ikut bias H1
          (EMA20 vs EMA50 H1 yang sudah selesai). BUY dan SELL.
@@ -362,7 +362,7 @@ def strat_asia_nr7_engulf(df, sl_usd=4.5, be_trigger=0.75, be_plus=0.6, trail_us
         plan = _plan(d, long, short, pd.Series(sl_usd, index=d.index), np.nan, no, no)
         return mtf.to_m1(plan, df, rule)
 
-    p1, p2 = part("15min", "nr7", "h1", "both"), part("5min", "engulf", "m15", "long")
+    p1, p2 = part("15min", "nr7", nr7_bias, "both"), part("5min", "engulf", "m15", "long")
     plan = p1.copy()
     plan["entry"] = np.where(p1["entry"] != 0, p1["entry"], p2["entry"])
     plan["be_trigger"], plan["be_plus"], plan["trail"], plan["be_touch"] = be_trigger, be_plus, trail_usd, be_mode == "tick"
@@ -394,6 +394,7 @@ class Config:
     spread: float = 0.30         # spread dalam $ per oz (dibayar setengah saat masuk, setengah saat keluar)
     commission: float = 0.0      # komisi round-trip per lot ($)
     max_leverage: float = 100.0  # batas nilai posisi / ekuitas
+    slippage: float = 0.0        # slippage $ per oz yang merugikan, dikenakan pada entry market dan eksekusi SL
 
 
 @dataclass
@@ -444,7 +445,7 @@ def run_backtest(df: pd.DataFrame, plan: pd.DataFrame, cfg: Config, start: int =
 
     def close(i, price, reason):
         nonlocal equity, pos
-        fill = price - pos.direction * half
+        fill = price - pos.direction * (half + (cfg.slippage if reason in ("SL", "BE") else 0.0))
         pnl = pos.direction * (fill - pos.entry_price) * pos.lots * OZ_PER_LOT - cfg.commission * pos.lots
         pnl += pos.partial_pnl
         pos.exit_time, pos.exit_price, pos.reason = times[i], fill, reason
@@ -460,7 +461,7 @@ def run_backtest(df: pd.DataFrame, plan: pd.DataFrame, cfg: Config, start: int =
         pending_exit = False
         if pos is None and pending_entry != 0 and pending_sl > 0 and equity > 0:
             d = pending_entry
-            fill = o[i] + d * half
+            fill = o[i] + d * (half + cfg.slippage)
             risk_usd = equity * cfg.risk_pct / 100
             oz = risk_usd / pending_sl
             oz = min(oz, equity * cfg.max_leverage / fill)

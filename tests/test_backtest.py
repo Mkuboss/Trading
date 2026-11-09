@@ -243,3 +243,13 @@ def test_asia_nr7_engulf_rules():
     assert (ent.index.minute % 5 == 4).all()                            # sinyal di bar M1 terakhir dari bar M5/M15
     trades, _ = bt.run_backtest(df, plan, bt.Config(spread=0.3))
     assert all(abs(t.entry_price - t.sl_price) <= 4.5 + 1e-9 for t in trades)
+
+
+def test_slippage_worsens_entry_and_sl_fills():
+    df = make_df([[100, 101, 99, 100], [100, 101, 99, 100], [100, 100.5, 96, 97], [97, 98, 96, 97]])
+    plan = make_plan(df, entry_at=0, direction=1, sl=3.0)
+    t0, _ = bt.run_backtest(df, plan, bt.Config(spread=0.0))
+    t1, _ = bt.run_backtest(df, plan, bt.Config(spread=0.0, slippage=0.2))
+    assert t1[0].entry_price == t0[0].entry_price + 0.2        # beli lebih mahal
+    assert t1[0].reason == "SL" and t1[0].exit_price == t1[0].sl_price - 0.2   # SL terisi lebih buruk
+    assert t1[0].pnl < t0[0].pnl

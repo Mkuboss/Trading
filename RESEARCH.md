@@ -406,3 +406,54 @@ SL_USD=3 BE_MODE=m1close python multi_scan.py              # scan 6.804 kombinas
 SL_USD=3 BE_MODE=m1close python multi_scan.py --bench      # benchmark entry acak
 python stage2.py && python final_grid.py
 ```
+
+---
+
+# Penyempurnaan & uji holdout (9 Nov 2026)
+
+Permintaan: sempurnakan di backtest, jangan sarankan dipakai sebelum lolos. Yang dikerjakan, berurutan dan dengan kriteria yang ditetapkan **sebelum** melihat hasil.
+
+## 1. Leave-one-period-out: seberapa overfit prosedur seleksinya?
+Dari hasil scan SL $4,5 (6.804 kombinasi), seleksi diulang hanya dengan 2 periode, lalu dilihat hasilnya di periode ke-3 yang disembunyikan:
+
+| Periode disembunyikan | Kombinasi lolos di 2 periode lain | Profit di periode tersembunyi | Win ≥ 75% di sana |
+|---|---|---|---|
+| Jan (naik) | 14 | 43% | 29% |
+| Agu–Okt (sideways) | 14 | 29% | 50% |
+| Okt–Nov (turun) | 9 | 78% | 67% |
+
+Kesimpulan jujur: prosedur "lolos di 2 periode" **tidak cukup** menjamin periode berikutnya; separuh lebih kandidat gagal di periode tersembunyi, terutama di rezim sideways. Yang bertahan di ketiga uji hanya keluarga NR7 M15 Asia (bias D1 lebih stabil daripada H1 di uji ini) dan engulfing M5 Asia long, yaitu dua komponen strategi final. Karena itu strategi final **tidak boleh dianggap lolos** sebelum diuji di data yang sama sekali belum dilihat (bagian 5).
+
+## 2. Slippage
+Mesin kini punya `Config.slippage` (merugikan, dikenakan pada entry market dan eksekusi SL; test `test_slippage_worsens_entry_and_sl_fills`).
+
+| Spread / slippage | Win | expR | PF | Return Jan / Agu–Okt / Okt–Nov |
+|---|---|---|---|---|
+| $0,3 / 0 | 81,9% | +0,39 | 3,09 | +32,0 / +11,8 / +21,3% |
+| $0,3 / $0,1 | 80,6% | +0,35 | 2,72 | +30,6 / +8,5 / +18,8% |
+| $0,3 / $0,2 | 78,1% | +0,29 | 2,22 | +25,5 / +4,1 / +16,3% |
+| $0,5 / $0,2 | 76,7% | +0,23 | 1,92 | +19,8 / +1,0 / +15,2% |
+| $0,6 / $0,3 | 77,5% | +0,14 | 1,49 | +11,7 / **−3,3** / +11,1% |
+
+Rezim sideways (Agu–Okt) adalah yang paling rapuh terhadap biaya. Batas aman: spread + slippage ≤ $0,7 total.
+
+## 3. Diagnosa trade rugi (`diag_final.py`)
+Tiap trade diberi fitur: sumber sinyal, arah, jam, hari, ATR M15 relatif, ADX H1, ATR H1, range hari sebelumnya, jarak dari open harian. **Tidak ada satu pun fitur yang memisahkan trade rugi secara konsisten di ketiga periode**; bucket yang terlihat bagus di satu periode buruk di periode lain. Menambah filter dari sini = overfitting, jadi tidak dilakukan. Catatan: tiap komponen punya satu periode nyaris nol (engulfing di Jan expR −0,04; NR7 di Okt–Nov +0,17); gabungannya yang menghaluskan.
+
+## 4. Bootstrap (5.000 pengacakan urutan 160 trade, spread $0,3 + slippage $0,1, risiko 1%)
+- Return 15 minggu: median +67%, 5% terburuk +10%.
+- Max drawdown: median −7,6%, 5% terburuk −14%, ekstrem −25%.
+- Blok 4 minggu (±43 trade): **17% peluang rugi**, 10% terburuk −3R.
+- Kalah beruntun ≥ 5 dalam 160 trade: ±4%.
+Artinya satu bulan demo yang minus **tidak** otomatis membuktikan strategi rusak; dua bulan berturut-turut minus baru sinyal.
+
+## 5. Uji holdout: pra-registrasi (ditulis sebelum data selesai diunduh)
+Strategi **dibekukan**: `asia_nr7_engulf` default (SL $4,5, BE close M1 +0,75 → +0,60, trailing $18, NR7 bias H1 + engulfing bias M15). Alternatif yang dicatat sebelumnya: NR7 bias D1 (`nr7_bias="d1"`), hanya untuk dilaporkan, bukan untuk dipilih setelah melihat hasil.
+
+Data holdout (belum pernah dilihat/dipakai): Dukascopy M1 **3–28 Nov 2025**, **2–27 Mar 2026**, **1–26 Jun 2026**.
+
+Kriteria lolos (`holdout.py`, spread $0,30, slippage $0,10):
+- tiap periode holdout: ≥ 10 trade, profit, win ≥ 75%;
+- gabungan 6 periode: win ≥ 80%, PF ≥ 1,5, ≥ 60% minggu profit.
+
+Kalau gagal, strategi dinyatakan **tidak lolos** dan tidak disarankan dipakai; riset dilanjutkan atau dihentikan dengan laporan jujur.
