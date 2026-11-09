@@ -23,7 +23,8 @@ ALL_PERIODS = {"jan": "data/duka_m1_jan26.csv", "augoct": "data/duka_m1_augoct26
                "feb26": "data/duka_m1_feb26.csv", "apr26": "data/duka_m1_apr26.csv", "sep25": "data/duka_m1_sep25.csv"}
 # PERIODS=jan,augoct,octnov (default 3 periode riset awal) | PERIODS=all6 -> 6 periode (3 riset + 3 bekas holdout)
 _sel = os.environ.get("PERIODS", "jan,augoct,octnov")
-_sel = ["jan", "augoct", "octnov", "nov25", "mar26", "jun26"] if _sel == "all6" else _sel.split(",")
+_sel = {"all6": ["jan", "augoct", "octnov", "nov25", "mar26", "jun26"],
+        "all9": ["jan", "augoct", "octnov", "nov25", "mar26", "jun26", "feb26", "apr26", "sep25"]}.get(_sel, _sel.split(","))
 PERIODS = {k: ALL_PERIODS[k] for k in _sel}
 TAG = os.environ.get("TAG", "")
 SIG_TFS = {"1m": "1min", "5m": "5min", "15m": "15min"}
